@@ -55,7 +55,14 @@ Recommended first use cases:
 
 The harness does not yet:
 
-- lock the runtime library choice
 - define CI files
 - define code generation templates
 - replace specs as the source of truth
+
+## Current Technical Commitments
+
+The harness should treat `Phaser` as the accepted runtime for the first implementation phase.
+
+This is a delivery decision, not a forever constraint.
+
+The runtime choice may be revisited after the first playable milestone if Phaser creates concrete problems that justify a change.
