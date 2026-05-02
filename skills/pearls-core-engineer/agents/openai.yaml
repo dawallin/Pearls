@@ -1,0 +1,4 @@
+interface:
+  display_name: "Pearls Core Engineer"
+  short_description: "Deterministic simulation and rules"
+  default_prompt: "Work on the Pearls core engine only. Preserve deterministic ticks, stable event ordering, and strict runtime separation."

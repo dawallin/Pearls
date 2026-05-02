@@ -1,0 +1,4 @@
+interface:
+  display_name: "Pearls Test Engineer"
+  short_description: "Deterministic tests and validation"
+  default_prompt: "Design or implement the Pearls test harness with strong deterministic core tests and narrow runtime hooks."

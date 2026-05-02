@@ -1,0 +1,4 @@
+interface:
+  display_name: "Pearls Runtime Engineer"
+  short_description: "Rendering, input, and debug surfaces"
+  default_prompt: "Implement the Pearls runtime around a deterministic core. Keep rendering and input separate from gameplay truth."
