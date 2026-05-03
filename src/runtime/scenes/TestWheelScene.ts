@@ -105,7 +105,7 @@ export class TestWheelScene extends Phaser.Scene {
     const maxWheelSize = Math.min(this.scale.width, this.scale.height) * 0.64;
     const wheelScale = maxWheelSize / this.wheel.width;
     const holeRadius = this.wheel.width * 0.348;
-    const ballSize = this.wheel.width * 0.145;
+    const ballSize = this.wheel.width * 0.145 * wheelScale;
 
     this.wheel.setScale(wheelScale);
     this.ball.setScale(ballSize / this.ball.width);
