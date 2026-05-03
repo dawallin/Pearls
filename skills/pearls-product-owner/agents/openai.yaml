@@ -1,0 +1,4 @@
+interface:
+  display_name: "Pearls Product Owner"
+  short_description: "Clarify gameplay goals and acceptance criteria"
+  default_prompt: "Clarify the Pearls game intent, rules, and acceptance criteria before engineering starts."
