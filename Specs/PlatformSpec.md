@@ -246,6 +246,19 @@ Implementation requirements:
 - Vite `base` is configured correctly for `/<repo>/` hosting
 - runtime asset paths respect the configured base path
 
+### Recorded findings from deployment debugging
+
+The first real deployment surfaced several concrete GitHub Pages constraints that must be preserved.
+
+- GitHub Pages must publish the built `dist/` artifact, not the repository root.
+- The Pages workflow should use `GitHub Actions` and upload `./dist`.
+- A generic static Pages workflow that uploads `.` is incorrect for this repo because it serves source `index.html` instead of the Vite build output.
+- For the current hosting setup, Pearls is a GitHub Pages project site hosted at `/<repo>/`, not at the custom-domain root.
+- If the custom domain root is already serving a different site, Pearls must keep the Vite `base` aligned to `/<repo>/` so emitted asset URLs resolve under that path.
+- Forcing the Pages build to emit root-based asset URLs such as `/assets/...` breaks the deployed app when the site is actually hosted under `/<repo>/`.
+- A custom domain can still front a project site path, for example `https://www.dawallin.com/Pearls/`; this does not mean the app is hosted at `https://www.dawallin.com/`.
+- When debugging Pages failures, verify both the deployed HTML location and the emitted asset URLs before changing Vite `base`.
+
 ## Testing Requirements
 
 ### Core tests
