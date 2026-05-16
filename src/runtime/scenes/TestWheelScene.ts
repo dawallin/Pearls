@@ -1,25 +1,35 @@
 import Phaser from "phaser";
 
+import { testWheel1x1Level } from "../../core/levels/test/testWheel1x1Level";
+import type { WheelLevelComponent } from "../../core/level/gridLevel";
+import { installPearlsDebug } from "../debug/installPearlsDebug";
+import {
+  WheelController,
+  type WheelAnimationInstruction
+} from "../game/WheelController";
+import { createGridLayout, getGridCellLayout } from "../layout/gridLayout";
+
 const WHEEL_KEY = "wheel";
 const BALL_SOURCE_KEY = "ball-source";
 const BALL_KEY = "ball";
-const TURN_DEGREES = 45;
 const SUBSTEPS_PER_TURN = 3;
-const SUBSTEP_DEGREES = TURN_DEGREES / SUBSTEPS_PER_TURN;
 const SUBSTEP_DURATION_MS = 70;
+const WHEEL_TURN_RADIANS = Math.PI / 4;
 const BALL_TEXTURE_SIZE = 192;
 const BALL_SOURCE_CROP = {
   x: 422,
   y: 112,
   size: 184
 };
-
 export class TestWheelScene extends Phaser.Scene {
-  private wheel?: Phaser.GameObjects.Image;
-  private ball?: Phaser.GameObjects.Image;
+  private readonly level = testWheel1x1Level;
+  private readonly controller = new WheelController({
+    wheelId: "wheel-01",
+    slotCount: 8
+  });
   private wheelAssembly?: Phaser.GameObjects.Container;
-  private queuedTurns = 0;
-  private isTurning = false;
+  private wheelBall?: Phaser.GameObjects.Image;
+  private wheelBallRadius = 0;
 
   constructor() {
     super("test-wheel");
@@ -34,40 +44,50 @@ export class TestWheelScene extends Phaser.Scene {
   create(): void {
     const { width, height } = this.scale;
     this.createBallTexture();
+    const layout = createGridLayout(this.level, width, height);
 
     this.add
-      .text(width / 2, 52, "Pearls Test Wheel", {
+      .text(width / 2, 52, `${this.level.name} · ${this.level.columns}x${this.level.rows} Grid`, {
         color: "#f3efe4",
         fontFamily: 'Georgia, "Times New Roman", serif',
-        fontSize: "32px"
+        fontSize: "28px"
       })
       .setOrigin(0.5);
 
     this.add
-      .text(width / 2, height - 42, "Click the wheel to rotate one slot.", {
+      .text(width / 2, height - 42, "Click the wheel and inspect the smooth quarter-step rotation.", {
         color: "#d6d0c1",
         fontFamily: 'Georgia, "Times New Roman", serif',
-        fontSize: "20px"
+        fontSize: "18px"
       })
       .setOrigin(0.5);
 
-    this.wheel = this.add.image(0, 0, WHEEL_KEY);
-    this.ball = this.add.image(0, 0, BALL_KEY);
-    this.wheelAssembly = this.add.container(width / 2, height / 2, [this.wheel, this.ball]);
+    this.drawGrid(layout);
+    this.createWheel(layout, this.level.cells[0].component as WheelLevelComponent, {
+      column: 0,
+      row: 0
+    });
 
-    this.wheel.setInteractive({ useHandCursor: true });
-
-    this.fitWheelToViewport();
-    this.wheel.on("pointerdown", () => this.queueTurn());
+    const uninstallDebug = installPearlsDebug({
+      getSnapshot: () => ({
+        levelId: this.level.id,
+        levelName: this.level.name,
+        grid: {
+          columns: this.level.columns,
+          rows: this.level.rows
+        },
+        wheel: this.controller.getSnapshot(this.wheelAssembly?.rotation ?? 0)
+      }),
+      pressDispatcher: () => {},
+      requestRotateTurn: () => this.rotateWheel()
+    });
 
     this.scale.on("resize", this.handleResize, this);
+    this.events.once("shutdown", uninstallDebug);
   }
 
   private handleResize(gameSize: Phaser.Structs.Size): void {
-    const width = gameSize.width;
-    const height = gameSize.height;
-
-    this.cameras.main.setViewport(0, 0, width, height);
+    this.cameras.main.setViewport(0, 0, gameSize.width, gameSize.height);
     this.scene.restart();
   }
 
@@ -97,60 +117,92 @@ export class TestWheelScene extends Phaser.Scene {
     texture.refresh();
   }
 
-  private fitWheelToViewport(): void {
-    if (!this.wheel || !this.ball || !this.wheelAssembly) {
-      return;
-    }
+  private drawGrid(layout: ReturnType<typeof createGridLayout>): void {
+    const graphics = this.add.graphics();
 
-    const maxWheelSize = Math.min(this.scale.width, this.scale.height) * 0.64;
-    const wheelScale = maxWheelSize / this.wheel.width;
-    const holeRadius = this.wheel.width * 0.348;
-    const ballSize = this.wheel.width * 0.145 * wheelScale;
+    graphics.lineStyle(3, 0x516170, 0.9);
+    graphics.strokeRect(layout.originX, layout.originY, layout.width, layout.height);
 
-    this.wheel.setScale(wheelScale);
-    this.ball.setScale(ballSize / this.ball.width);
-    this.ball.setPosition(0, -holeRadius * wheelScale);
+    const cellLayout = getGridCellLayout(layout, { column: 0, row: 0 });
+    graphics.fillStyle(0x142330, 0.42);
+    graphics.fillRoundedRect(
+      cellLayout.centerX - cellLayout.width * 0.44,
+      cellLayout.centerY - cellLayout.height * 0.44,
+      cellLayout.width * 0.88,
+      cellLayout.height * 0.88,
+      18
+    );
   }
 
-  private queueTurn(): void {
-    this.queuedTurns += 1;
+  private createWheel(
+    layout: ReturnType<typeof createGridLayout>,
+    _: WheelLevelComponent,
+    cell: { column: number; row: number }
+  ): void {
+    const cellLayout = getGridCellLayout(layout, cell);
+    const wheel = this.add.image(0, 0, WHEEL_KEY);
+    const ball = this.add.image(0, 0, BALL_KEY);
+    const assembly = this.add.container(cellLayout.centerX, cellLayout.centerY, [wheel]);
+    const maxWheelSize = Math.min(cellLayout.width, cellLayout.height) * 0.72;
+    const wheelScale = maxWheelSize / wheel.width;
+    const holeRadius = wheel.width * 0.348;
+    const ballSize = wheel.width * 0.145 * wheelScale;
 
-    if (!this.isTurning) {
-      this.startNextTurn();
+    wheel.setScale(wheelScale);
+    ball.setScale(ballSize / ball.width);
+    ball.setPosition(cellLayout.centerX, cellLayout.centerY - holeRadius * wheelScale);
+    this.wheelBallRadius = holeRadius * wheelScale;
+    wheel.setInteractive({ useHandCursor: true });
+    wheel.on("pointerdown", () => this.rotateWheel());
+
+    this.wheelAssembly = assembly;
+    this.wheelBall = ball;
+    this.children.bringToTop(ball);
+    this.syncWheelBallPose();
+  }
+
+  private rotateWheel(): void {
+    const instruction = this.controller.requestRotateTurn();
+
+    if (instruction) {
+      this.animateWheelTurn(instruction);
     }
   }
 
-  private startNextTurn(): void {
-    if (!this.wheelAssembly || this.queuedTurns === 0) {
-      this.isTurning = false;
-      return;
-    }
-
-    this.queuedTurns -= 1;
-    this.isTurning = true;
-    this.runSubstep(0);
-  }
-
-  private runSubstep(stepIndex: number): void {
+  private animateWheelTurn(_: WheelAnimationInstruction): void {
     if (!this.wheelAssembly) {
-      this.isTurning = false;
       return;
     }
 
     this.tweens.add({
       targets: this.wheelAssembly,
-      angle: this.wheelAssembly.angle + SUBSTEP_DEGREES,
-      duration: SUBSTEP_DURATION_MS,
+      rotation: this.wheelAssembly.rotation + WHEEL_TURN_RADIANS,
+      duration: SUBSTEP_DURATION_MS * SUBSTEPS_PER_TURN,
       ease: "Cubic.Out",
+      onUpdate: () => {
+        this.syncWheelBallPose();
+      },
       onComplete: () => {
-        if (stepIndex + 1 < SUBSTEPS_PER_TURN) {
-          this.runSubstep(stepIndex + 1);
-          return;
-        }
+        this.syncWheelBallPose();
+        const nextInstruction = this.controller.completeAnimation();
 
-        this.isTurning = false;
-        this.startNextTurn();
+        if (nextInstruction) {
+          this.animateWheelTurn(nextInstruction);
+        }
       }
     });
+  }
+
+  private syncWheelBallPose(): void {
+    if (!this.wheelAssembly || !this.wheelBall) {
+      return;
+    }
+
+    const angle = this.wheelAssembly.rotation - Math.PI / 2;
+
+    this.wheelBall.setPosition(
+      this.wheelAssembly.x + Math.cos(angle) * this.wheelBallRadius,
+      this.wheelAssembly.y + Math.sin(angle) * this.wheelBallRadius
+    );
   }
 }

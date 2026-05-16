@@ -1,4 +1,4 @@
 interface:
   display_name: "Pearls Orchestrator"
   short_description: "Route Pearls tasks to the right role"
-  default_prompt: "Read the Pearls specs, choose the right specialist role, and keep the architecture boundaries intact."
+  default_prompt: "Read the Pearls specs, choose the right specialist role, and protect architecture boundaries without doing specialist work in the router."

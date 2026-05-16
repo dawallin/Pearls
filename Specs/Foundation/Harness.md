@@ -17,10 +17,11 @@ Do not start with a full multi-agent workflow.
 
 One orchestrator should:
 
-1. read the relevant spec
-2. choose the correct specialist role
-3. implement or update the requested slice
-4. pull in another specialist skill when the task changes shape
+1. read the relevant foundation spec
+2. read the relevant gameplay spec when one exists
+3. choose the correct specialist role
+4. implement or update the requested slice
+5. pull in another specialist skill when the task changes shape
 
 Specialist roles:
 

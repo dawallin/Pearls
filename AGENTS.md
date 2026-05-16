@@ -11,7 +11,7 @@ Default goal: keep the deterministic simulation architecture intact while moving
 When instructions conflict, follow this order:
 
 1. Current user request
-2. Relevant spec in `Specs/`
+2. Relevant Foundation spec in `Specs/Foundation/`, then the relevant Gameplay spec in `Specs/Gameplay/` when one exists
 3. This file (`AGENTS.md`)
 4. Relevant skill in `skills/`
 5. General engineering best practices
@@ -22,9 +22,21 @@ Pearls is planned as a TypeScript browser game with:
 
 - a deterministic core / logic engine
 - a separate runtime for rendering, input, assets, and debug UI
-- specs stored in `Specs/`
+- cross-cutting foundation specs stored in `Specs/Foundation/`
+- gameplay and content specs stored in `Specs/Gameplay/`
 
-`Specs/MainIdea.md` is the architectural baseline unless a newer spec supersedes part of it.
+`Specs/Foundation/MainIdea.md` is the architectural baseline unless a newer foundation spec supersedes part of it.
+
+## Project Description
+
+Pearls is a deterministic simulation game built around wheels, slots, chutes, and moving pearls.
+
+The project is intended to be implemented as two strict layers:
+
+- a pure simulation core that owns authoritative state, rules, tick advancement, and emitted events
+- a browser runtime that owns rendering, interpolation, input, assets, audio, and debugging surfaces
+
+The core must stay reproducible from the same initial state and command sequence. Runtime visuals may be smooth and frame-based, but they must never decide simulation truth.
 
 ## Harness Mode
 
@@ -47,17 +59,30 @@ Avoid subagents for open-ended architecture, first-pass scaffolding, or tasks wh
 
 ## Required Workflow Before Editing
 
-1. Read the relevant spec in `Specs/`.
-2. If the task touches core architecture, also read `Specs/MainIdea.md`.
-3. Choose the best matching skill from `skills/`.
-4. Keep the change scoped to the spec and current request.
-5. Validate the affected slice before finishing.
+1. Read `Specs/Foundation/SpecSystem.md`.
+2. Read the relevant foundation spec in `Specs/Foundation/`.
+3. Read the relevant gameplay spec in `Specs/Gameplay/` when one exists.
+4. If the task touches core architecture, also read `Specs/Foundation/MainIdea.md`.
+5. If the task touches level structure or authoring rules, also read `Specs/Foundation/LevelAuthoring.md`.
+6. If the task touches workflow, validation, or regression expectations, also read `Specs/Foundation/DevelopmentLoop.md`.
+7. Choose the best matching skill from `skills/`.
+8. Keep the change scoped to the spec and current request.
+9. Validate the affected slice before finishing.
+
+## Spec Roles
+
+Foundation specs define repo-wide constraints, architecture rules, authoring rules, and workflow expectations.
+
+Gameplay specs define feature behavior, mechanics, puzzles, progression, and content.
+
+Gameplay specs may refine behavior, but they must not violate foundation constraints unless the relevant foundation spec is explicitly updated too.
 
 ## Role Routing
 
 Use these repo-local skills when they match the task:
 
 - `skills/pearls-orchestrator/SKILL.md`: choose the role, decide whether to stay single-agent or delegate
+- `skills/pearls-architect/SKILL.md`: define boundaries, contracts, extension seams, and maintainability constraints
 - `skills/pearls-product-owner/SKILL.md`: clarify player goals, game rules, acceptance criteria, and unresolved product questions
 - `skills/pearls-core-engineer/SKILL.md`: deterministic simulation, state, events, rules
 - `skills/pearls-runtime-engineer/SKILL.md`: rendering, input, assets, scene flow, debug overlay
