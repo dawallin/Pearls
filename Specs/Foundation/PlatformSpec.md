@@ -6,7 +6,7 @@ Accepted on May 3, 2026.
 
 This spec defines the recommended technical platform for the first implementation phase of Pearls.
 
-It complements `Specs/MainIdea.md` and does not replace it.
+It complements `Specs/Foundation/MainIdea.md` and does not replace it.
 
 ## Decision Summary
 
@@ -130,7 +130,7 @@ Practical recommendation:
 
 ## Architecture Requirements
 
-The platform implementation must preserve these rules from `Specs/MainIdea.md`.
+The platform implementation must preserve these rules from `Specs/Foundation/MainIdea.md`.
 
 ### Core
 

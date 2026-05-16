@@ -1,0 +1,4 @@
+interface:
+  display_name: "Pearls Architect"
+  short_description: "Boundaries, contracts, and extension seams"
+  default_prompt: "Shape Pearls architecture for composability, maintainability, extension, and layered testability while preserving deterministic core boundaries."

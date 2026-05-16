@@ -30,8 +30,10 @@ Out of scope:
 
 Read:
 
-- `Specs/MainIdea.md` for architectural constraints that product decisions must respect
-- the relevant spec in `Specs/`
+- `Specs/Foundation/SpecSystem.md`
+- `Specs/Foundation/MainIdea.md` for architectural constraints that product decisions must respect
+- `Specs/Foundation/LevelAuthoring.md` when the task touches levels or component placement
+- the relevant gameplay spec in `Specs/Gameplay/`
 - `AGENTS.md`
 
 ## Working Rules
@@ -41,6 +43,8 @@ Read:
 3. Write acceptance criteria that engineering and testing can verify.
 4. Surface unresolved questions instead of silently deciding them when product risk is high.
 5. Do not drift into technical architecture unless a product decision depends on a technical constraint.
+6. Prefer mechanics that can be modeled with clear state, commands, and events.
+7. Call out behaviors that need unit, integration, and behavioral proof.
 
 ## Output Standard
 
@@ -53,6 +57,7 @@ When using this skill, produce one or more of:
 
 ## Handoff Rules
 
+- Hand off to `pearls-architect` when the product intent is clear but module boundaries or extension points still need to be shaped.
 - Hand off to `pearls-core-engineer` when the mechanic is clear enough to model deterministically.
 - Hand off to `pearls-runtime-engineer` when the player-facing behavior is clear and the work is mostly presentation or input.
 - Hand off to `pearls-test-engineer` when the behavior is decided and needs proof.

@@ -725,8 +725,10 @@ timeline
 │  │  ├─ events.ts
 │  │  └─ validateLevel.ts
 │  ├─ levels/
-│  │  ├─ e2e-basic.ts
-│  │  └─ level01.ts
+│  │  ├─ test/
+│  │  │  ├─ e2e-basic.ts
+│  │  │  └─ testWheel1x1Level.ts
+│  │  └─ game/
 │  └─ runtime/
 │     ├─ loop.ts
 │     ├─ input.ts
@@ -793,4 +795,3 @@ Playwright (minsta):
 - `deploy-pages` deployar en tidigare uppladdad artifact och rekommenderas i ett dedikerat jobb. citeturn7search9  
 - Pages‑deploy kräver `pages: write` + `id-token: write`. citeturn6search1  
 - Branch protection och krav på status checks finns i GitHub docs. citeturn1search4turn1search16  
-

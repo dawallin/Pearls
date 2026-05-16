@@ -1,6 +1,6 @@
 ---
 name: pearls-orchestrator
-description: Route Pearls work to the right specialist and decide whether to stay single-agent or use subagents. Use when a task spans planning, architecture, or multiple implementation tracks.
+description: Route Pearls work to the right specialist and decide whether to stay single-agent or use subagents. Use when a task spans planning, multiple implementation tracks, or needs role selection before execution.
 ---
 
 # Pearls Orchestrator
@@ -17,18 +17,22 @@ Change hats instead of spawning subagents unless the work is clearly paralleliza
 
 Read these before deciding the path:
 
-- `Specs/MainIdea.md` for architectural constraints
-- the task-specific spec in `Specs/`, if one exists
+- `Specs/Foundation/SpecSystem.md`
+- the relevant foundation spec in `Specs/Foundation/`
+- `Specs/Foundation/MainIdea.md` for architectural constraints
+- the task-specific gameplay spec in `Specs/Gameplay/`, if one exists
 - `AGENTS.md` for repo harness rules
 
 ## Routing Rules
 
 - Use `pearls-product-owner` for gameplay intent, rule clarification, player goals, win/loss states, and acceptance criteria.
+- Use `pearls-architect` for module boundaries, contracts, extension seams, dependency direction, and maintainability constraints.
 - Use `pearls-core-engineer` for deterministic rules, state, ticks, arrivals, slot mapping, and events.
 - Use `pearls-runtime-engineer` for rendering, interpolation, scenes, input, assets, and debug UI.
 - Use `pearls-test-engineer` for Vitest, Playwright, test hooks, regression coverage, and CI-facing checks.
 
 When product intent is unclear, route there before making technical tradeoffs.
+When implementation pressure risks coupling subsystems or collapsing test seams, route to `pearls-architect` before coding.
 
 ## Delegation Rules
 
