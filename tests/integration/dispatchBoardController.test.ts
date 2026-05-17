@@ -110,4 +110,44 @@ describe("DispatchBoardController", () => {
     expect(snapshot.wheel.ballLocalSlotIndex).toBe(7);
     expect(snapshot.wheel.hasBall).toBe(true);
   });
+
+  it("dispatches from two configured dispatchers into the same wheel", () => {
+    const controller = new DispatchBoardController({
+      dispatchers: [
+        {
+          id: "dispatcher-top",
+          slideId: "slide-top",
+          hasInitialBall: true,
+          connectedWorldSlotIndex: 0
+        },
+        {
+          id: "dispatcher-left",
+          slideId: "slide-left",
+          hasInitialBall: true,
+          connectedWorldSlotIndex: 6
+        }
+      ],
+      wheelId: "wheel-a",
+      wheelSlotCount: 8
+    });
+
+    expect(controller.requestDispatch("dispatcher-top")).toMatchObject({
+      dispatcherId: "dispatcher-top",
+      slideId: "slide-top"
+    });
+    controller.completeDispatchAnimation();
+    expect(controller.requestDispatch("dispatcher-left")).toMatchObject({
+      dispatcherId: "dispatcher-left",
+      slideId: "slide-left"
+    });
+
+    const snapshot = controller.getSnapshot();
+
+    expect(snapshot.dispatchers.map((dispatcher) => dispatcher.hasBall)).toEqual([
+      false,
+      false
+    ]);
+    expect(snapshot.wheel.slots[0]).toBe("dispatcher-top:ball");
+    expect(snapshot.wheel.slots[6]).toBe("dispatcher-left:ball");
+  });
 });

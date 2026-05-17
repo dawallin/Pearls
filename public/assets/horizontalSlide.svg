@@ -1,0 +1,75 @@
+<svg width="1024" height="256" viewBox="0 0 1024 256"
+     xmlns="http://www.w3.org/2000/svg">
+
+  <defs>
+    <linearGradient id="railWood" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%"   stop-color="#7a431f"/>
+      <stop offset="8%"   stop-color="#b56f37"/>
+      <stop offset="18%"  stop-color="#e1aa69"/>
+      <stop offset="50%"  stop-color="#d79855"/>
+      <stop offset="82%"  stop-color="#b86d35"/>
+      <stop offset="92%"  stop-color="#8b4f28"/>
+      <stop offset="100%" stop-color="#5c3017"/>
+    </linearGradient>
+
+    <filter id="woodTextureBlend" filterUnits="objectBoundingBox" x="0" y="0" width="1" height="1">
+      <feTurbulence type="fractalNoise" baseFrequency="0.85 0.18" numOctaves="2" seed="7" result="noise"/>
+      <feColorMatrix in="noise" type="saturate" values="0" result="mono"/>
+      <feComponentTransfer in="mono" result="noiseSoft">
+        <feFuncR type="gamma" amplitude="1" exponent="1.35" offset="0"/>
+        <feFuncG type="gamma" amplitude="1" exponent="1.35" offset="0"/>
+        <feFuncB type="gamma" amplitude="1" exponent="1.35" offset="0"/>
+      </feComponentTransfer>
+      <feBlend in="SourceGraphic" in2="noiseSoft" mode="multiply"/>
+    </filter>
+
+    <filter id="railShadow" x="-10%" y="-40%" width="120%" height="180%">
+      <feDropShadow dx="0" dy="8" stdDeviation="5" flood-color="#000000" flood-opacity="0.22"/>
+    </filter>
+
+    <clipPath id="railClip">
+      <rect x="0" y="36" width="1024" height="184" rx="6" ry="6"/>
+    </clipPath>
+  </defs>
+
+  <!-- Main rail body -->
+  <rect x="0" y="36" width="1024" height="184" rx="6" ry="6"
+        fill="url(#railWood)"
+        filter="url(#railShadow)"/>
+
+  <!-- Texture only on wood -->
+  <g clip-path="url(#railClip)" opacity="0.45">
+    <rect x="0" y="36" width="1024" height="184"
+          fill="url(#railWood)"
+          filter="url(#woodTextureBlend)"/>
+  </g>
+
+  <!-- TOP groove -->
+  <rect x="0" y="42" width="1024" height="7"
+        fill="#f5c993" opacity="0.78"/>
+  <rect x="0" y="50" width="1024" height="4"
+        fill="#6e3c1d" opacity="0.38"/>
+
+  <!-- BOTTOM groove (mirrored logic) -->
+  <rect x="0" y="194" width="1024" height="4"
+        fill="#6e3c1d" opacity="0.38"/>
+  <rect x="0" y="201" width="1024" height="7"
+        fill="#f5c993" opacity="0.55"/>
+
+  <!-- Extra subtle bevel -->
+  <rect x="0" y="36" width="1024" height="12"
+        fill="#f9d3a5" opacity="0.12"/>
+  <rect x="0" y="208" width="1024" height="10"
+        fill="#000000" opacity="0.05"/>
+
+  <!-- Wood grain -->
+  <g opacity="0.16" stroke-linecap="round">
+    <path d="M 40 92 C 170 82, 270 104, 420 92 S 720 82, 980 94"
+          stroke="#7a451f" stroke-width="3" fill="none"/>
+    <path d="M 20 126 C 180 116, 340 134, 520 124 S 780 112, 1010 128"
+          stroke="#f0bd7b" stroke-width="2" fill="none"/>
+    <path d="M 90 162 C 260 150, 420 170, 610 160 S 820 150, 1000 162"
+          stroke="#7a451f" stroke-width="2" fill="none"/>
+  </g>
+
+</svg>

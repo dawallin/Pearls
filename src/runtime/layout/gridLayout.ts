@@ -1,4 +1,8 @@
-import type { GridCellCoordinate, GridLevelDefinition } from "../../core/level/gridLevel";
+import type {
+  GridCellCoordinate,
+  GridCellSpan,
+  GridLevelDefinition
+} from "../../core/level/gridLevel";
 
 export type GridCellLayout = GridCellCoordinate &
   Readonly<{
@@ -43,14 +47,17 @@ export function createGridLayout(
 
 export function getGridCellLayout(
   layout: GridLayout,
-  cell: GridCellCoordinate
+  cell: GridCellCoordinate & GridCellSpan
 ): GridCellLayout {
+  const spanWidth = cell.width ?? 1;
+  const spanHeight = cell.height ?? 1;
+
   return {
     column: cell.column,
     row: cell.row,
-    centerX: layout.originX + layout.cellWidth * (cell.column + 0.5),
-    centerY: layout.originY + layout.cellHeight * (cell.row + 0.5),
-    width: layout.cellWidth,
-    height: layout.cellHeight
+    centerX: layout.originX + layout.cellWidth * (cell.column + spanWidth / 2),
+    centerY: layout.originY + layout.cellHeight * (cell.row + spanHeight / 2),
+    width: layout.cellWidth * spanWidth,
+    height: layout.cellHeight * spanHeight
   };
 }

@@ -1,0 +1,87 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="factoryWood" cx="50%" cy="42%" r="70%">
+      <stop offset="0%" stop-color="#e3c78f"/>
+      <stop offset="35%" stop-color="#d6a966"/>
+      <stop offset="65%" stop-color="#c48643"/>
+      <stop offset="88%" stop-color="#9a5b2e"/>
+      <stop offset="100%" stop-color="#6f3b1c"/>
+    </radialGradient>
+
+    <filter id="woodTextureBlend" filterUnits="objectBoundingBox" x="0" y="0" width="1" height="1">
+      <feTurbulence type="fractalNoise" baseFrequency="0.75 0.22" numOctaves="2" seed="7" result="noise"/>
+      <feColorMatrix in="noise" type="saturate" values="0" result="mono"/>
+      <feComponentTransfer in="mono" result="noiseSoft">
+        <feFuncR type="gamma" amplitude="1" exponent="1.35" offset="0"/>
+        <feFuncG type="gamma" amplitude="1" exponent="1.35" offset="0"/>
+        <feFuncB type="gamma" amplitude="1" exponent="1.35" offset="0"/>
+      </feComponentTransfer>
+      <feBlend in="SourceGraphic" in2="noiseSoft" mode="multiply"/>
+    </filter>
+
+    <filter id="softShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="5" stdDeviation="5" flood-color="#000000" flood-opacity="0.14"/>
+    </filter>
+
+    <clipPath id="bodyClip">
+      <rect x="88" y="64" width="336" height="384" rx="46" ry="46"/>
+    </clipPath>
+
+    <mask id="shellMask">
+      <rect x="0" y="0" width="512" height="512" fill="black"/>
+      <rect x="88" y="64" width="336" height="384" rx="46" ry="46" fill="white"/>
+      <circle cx="256" cy="248" r="54.9" fill="black"/>
+      <path d="
+        M 201.1 448
+        L 201.1 390
+        C 201.1 362, 225.6 342, 256 342
+        C 286.4 342, 310.9 362, 310.9 390
+        L 310.9 448
+        Z"
+        fill="black"/>
+    </mask>
+  </defs>
+
+  <g mask="url(#shellMask)">
+    <rect x="88" y="64" width="336" height="384" rx="46" ry="46"
+          fill="url(#factoryWood)"
+          filter="url(#softShadow)"/>
+
+    <g clip-path="url(#bodyClip)" opacity="0.38">
+      <rect x="88" y="64" width="336" height="384"
+            fill="url(#factoryWood)"
+            filter="url(#woodTextureBlend)"/>
+    </g>
+
+    <rect x="122" y="108" width="268" height="10" rx="5"
+          fill="#ffe0b0" opacity="0.20"/>
+    <rect x="122" y="404" width="268" height="8" rx="4"
+          fill="#000000" opacity="0.10"/>
+  </g>
+
+  <path d="
+    M 201.1 448
+    L 201.1 390
+    C 201.1 362, 225.6 342, 256 342
+    C 286.4 342, 310.9 362, 310.9 390
+    L 310.9 448"
+    fill="none"
+    stroke="#f5c993"
+    stroke-width="6"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    opacity="0.22"/>
+
+  <path d="
+    M 214 448
+    L 214 396
+    C 214 376, 230 362, 256 362
+    C 282 362, 298 376, 298 396
+    L 298 448"
+    fill="none"
+    stroke="#000000"
+    stroke-width="5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    opacity="0.20"/>
+</svg>

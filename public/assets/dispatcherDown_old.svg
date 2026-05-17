@@ -1,0 +1,113 @@
+<svg width="512" height="512" viewBox="0 0 512 512"
+     xmlns="http://www.w3.org/2000/svg">
+
+  <defs>
+    <radialGradient id="factoryWood" cx="50%" cy="42%" r="70%">
+      <stop offset="0%"   stop-color="#e3c78f"/>
+      <stop offset="35%"  stop-color="#d6a966"/>
+      <stop offset="65%"  stop-color="#c48643"/>
+      <stop offset="88%"  stop-color="#9a5b2e"/>
+      <stop offset="100%" stop-color="#6f3b1c"/>
+    </radialGradient>
+
+    <linearGradient id="holeDepth" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%"   stop-color="#4a4a4a"/>
+      <stop offset="55%"  stop-color="#151515"/>
+      <stop offset="100%" stop-color="#000000"/>
+    </linearGradient>
+
+    <filter id="woodTextureBlend" filterUnits="objectBoundingBox" x="0" y="0" width="1" height="1">
+      <feTurbulence type="fractalNoise" baseFrequency="0.75 0.22" numOctaves="2" seed="7" result="noise"/>
+      <feColorMatrix in="noise" type="saturate" values="0" result="mono"/>
+      <feComponentTransfer in="mono" result="noiseSoft">
+        <feFuncR type="gamma" amplitude="1" exponent="1.35" offset="0"/>
+        <feFuncG type="gamma" amplitude="1" exponent="1.35" offset="0"/>
+        <feFuncB type="gamma" amplitude="1" exponent="1.35" offset="0"/>
+      </feComponentTransfer>
+      <feBlend in="SourceGraphic" in2="noiseSoft" mode="multiply"/>
+    </filter>
+
+    <filter id="softShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="5" stdDeviation="5" flood-color="#000000" flood-opacity="0.14"/>
+    </filter>
+
+    <clipPath id="bodyClip">
+      <rect x="96" y="72" width="320" height="300" rx="42" ry="42"/>
+    </clipPath>
+  </defs>
+
+  <!-- wooden box -->
+  <rect x="96" y="72" width="320" height="300" rx="42" ry="42"
+        fill="url(#factoryWood)"
+        filter="url(#softShadow)"/>
+
+  <!-- wood texture -->
+  <g clip-path="url(#bodyClip)" opacity="0.38">
+    <rect x="96" y="72" width="320" height="300"
+          fill="url(#factoryWood)"
+          filter="url(#woodTextureBlend)"/>
+  </g>
+
+  <!-- box bevels -->
+  <rect x="126" y="96" width="260" height="10" rx="5"
+        fill="#ffe0b0" opacity="0.20"/>
+  <rect x="126" y="340" width="260" height="8" rx="4"
+        fill="#000000" opacity="0.10"/>
+
+  <!-- center ball source hole -->
+  <circle cx="256" cy="205" r="76"
+          fill="url(#holeDepth)"/>
+  <circle cx="256" cy="205" r="54"
+          fill="#000000"/>
+  <circle cx="236" cy="188" r="11"
+          fill="#ffffff"
+          opacity="0.10"/>
+
+  <!-- lower side portal / door opening, no pipe -->
+  <path d="
+    M 206 372
+    L 206 330
+    C 206 302, 226 282, 256 282
+    C 286 282, 306 302, 306 330
+    L 306 372
+    Z"
+    fill="url(#holeDepth)"/>
+
+  <!-- inner dark portal -->
+  <path d="
+    M 224 372
+    L 224 332
+    C 224 315, 237 302, 256 302
+    C 275 302, 288 315, 288 332
+    L 288 372
+    Z"
+    fill="#000000"/>
+
+  <!-- subtle bevel around portal -->
+  <path d="
+    M 206 372
+    L 206 330
+    C 206 302, 226 282, 256 282
+    C 286 282, 306 302, 306 330
+    L 306 372"
+    fill="none"
+    stroke="#f5c993"
+    stroke-width="6"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    opacity="0.22"/>
+
+  <path d="
+    M 224 372
+    L 224 332
+    C 224 315, 237 302, 256 302
+    C 275 302, 288 315, 288 332
+    L 288 372"
+    fill="none"
+    stroke="#000000"
+    stroke-width="5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    opacity="0.22"/>
+
+</svg>

@@ -2,72 +2,85 @@ import Phaser from "phaser";
 
 import {
   type DispatcherDownLevelComponent,
+  type DispatcherRightLevelComponent,
+  type GridLevelDefinition,
+  type HorizontalSlideLevelComponent,
+  type LevelCell,
   type VerticalSlideLevelComponent,
   type WheelLevelComponent
 } from "../../core/level/gridLevel";
-import { testDispatcherSlideWheel1x3Level } from "../../core/levels/test/testDispatcherSlideWheel1x3Level";
+import { testDispatcherSlideWheel3x8Level } from "../../core/levels/test/testDispatcherSlideWheel3x8Level";
 import { installPearlsDebug } from "../debug/installPearlsDebug";
 import {
   DispatchBoardController,
+  type DispatchBoardControllerConfig,
   type WheelAnimationInstruction
 } from "../game/DispatchBoardController";
 import { createGridLayout, getGridCellLayout } from "../layout/gridLayout";
+import { DispatcherView } from "../render/dispatcher/DispatcherView";
+import { preloadDispatcherAssets } from "../render/dispatcher/dispatcherAssets";
+import { PEARL_KEY, createPearlTexture, preloadPearlAssets } from "../render/pearl/pearlAssets";
+import { SlideView } from "../render/slide/SlideView";
+import { preloadSlideAssets } from "../render/slide/slideAssets";
+import {
+  getDispatcherConnectorLayout,
+  getDispatcherRightConnectorLayout,
+  getWheelConnectorLayout,
+  getWheelLeftConnectorLayout
+} from "../render/slide/slidePath";
+import { WheelView } from "../render/wheel/WheelView";
+import { preloadWheelAssets } from "../render/wheel/wheelAssets";
 
-const DISPATCHER_KEY = "dispatcher-down";
-const SLIDE_KEY = "vertical-slide";
-const WHEEL_KEY = "wheel";
-const BALL_SOURCE_KEY = "ball-source";
-const BALL_KEY = "ball";
-const SUBSTEPS_PER_TURN = 3;
-const SUBSTEP_DURATION_MS = 70;
 const DISPATCH_DURATION_MS = 520;
-const WHEEL_TURN_RADIANS = Math.PI / 4;
-const BALL_TEXTURE_SIZE = 192;
-const BALL_SOURCE_CROP = {
-  x: 422,
-  y: 112,
-  size: 184
-};
-const WHEEL_SLOT_COUNT = 8;
 
 type ComponentCenter = Readonly<{
   x: number;
   y: number;
 }>;
 
+type TestBoardSceneConfig = Readonly<{
+  level?: GridLevelDefinition;
+  controller?: DispatchBoardControllerConfig;
+}>;
+
 export class TestBoardScene extends Phaser.Scene {
-  private readonly level = testDispatcherSlideWheel1x3Level;
-  private readonly controller = new DispatchBoardController({
-    dispatcherId: "dispatcher-01",
-    slideId: "slide-01",
-    wheelId: "wheel-01",
-    wheelSlotCount: 8,
-    dispatcherHasInitialBall: true
-  });
+  private readonly level: GridLevelDefinition;
+  private readonly controller: DispatchBoardController;
+  private readonly controlledDispatcherId: string;
 
   private readonly componentCenters = new Map<string, ComponentCenter>();
-  private dispatcherBall?: Phaser.GameObjects.Image;
+  private readonly dispatcherViews = new Map<string, DispatcherView>();
   private transitBall?: Phaser.GameObjects.Image;
-  private wheelBall?: Phaser.GameObjects.Image;
-  private wheelAssembly?: Phaser.GameObjects.Container;
-  private wheelBallRadius = 0;
-  private wheelBallLocalSlotIndex: number | null = null;
+  private wheelView?: WheelView;
 
-  constructor() {
+  constructor(config: TestBoardSceneConfig = {}) {
     super("test-board");
+
+    const controllerConfig = config.controller ?? {
+      dispatcherId: "dispatcher-01",
+      slideId: "slide-01-a",
+      wheelId: "wheel-01",
+      wheelSlotCount: 8,
+      dispatcherHasInitialBall: true
+    };
+
+    this.level = config.level ?? testDispatcherSlideWheel3x8Level;
+    this.controller = new DispatchBoardController(controllerConfig);
+    this.controlledDispatcherId =
+      controllerConfig.dispatcherId ?? controllerConfig.dispatchers?.[0]?.id ?? "dispatcher-01";
   }
 
   preload(): void {
     this.load.setBaseURL(import.meta.env.BASE_URL);
-    this.load.image(DISPATCHER_KEY, "assets/dispatcherDown.png");
-    this.load.image(SLIDE_KEY, "assets/verticalSlide.png");
-    this.load.image(WHEEL_KEY, "assets/Wheel.png");
-    this.load.image(BALL_SOURCE_KEY, "assets/RedBall.png");
+    preloadDispatcherAssets(this);
+    preloadSlideAssets(this);
+    preloadPearlAssets(this);
+    preloadWheelAssets(this);
   }
 
   create(): void {
     const { width, height } = this.scale;
-    this.createBallTexture();
+    createPearlTexture(this);
     const layout = createGridLayout(this.level, width, height);
 
     this.add
@@ -106,6 +119,10 @@ export class TestBoardScene extends Phaser.Scene {
               ...snapshot.dispatcher,
               center: this.componentCenters.get(snapshot.dispatcher.id)
             },
+            dispatchers: snapshot.dispatchers.map((dispatcher) => ({
+              ...dispatcher,
+              center: this.componentCenters.get(dispatcher.id)
+            })),
             slide: {
               ...snapshot.slide,
               center: this.componentCenters.get(snapshot.slide.id)
@@ -119,7 +136,7 @@ export class TestBoardScene extends Phaser.Scene {
           lastEvents: snapshot.lastEvents
         };
       },
-      pressDispatcher: () => this.dispatchBall(),
+      pressDispatcher: (dispatcherId?: string) => this.dispatchBall(dispatcherId),
       requestRotateTurn: () => this.rotateWheel()
     });
 
@@ -132,36 +149,10 @@ export class TestBoardScene extends Phaser.Scene {
     this.scene.restart();
   }
 
-  private createBallTexture(): void {
-    if (this.textures.exists(BALL_KEY)) {
-      this.textures.remove(BALL_KEY);
-    }
-
-    const source = this.textures.get(BALL_SOURCE_KEY).getSourceImage() as CanvasImageSource;
-    const texture = this.textures.createCanvas(BALL_KEY, BALL_TEXTURE_SIZE, BALL_TEXTURE_SIZE);
-
-    if (!texture) {
-      return;
-    }
-
-    texture.context.drawImage(
-      source,
-      BALL_SOURCE_CROP.x,
-      BALL_SOURCE_CROP.y,
-      BALL_SOURCE_CROP.size,
-      BALL_SOURCE_CROP.size,
-      0,
-      0,
-      BALL_TEXTURE_SIZE,
-      BALL_TEXTURE_SIZE
-    );
-    texture.refresh();
-  }
-
   private drawGrid(layout: ReturnType<typeof createGridLayout>): void {
     const graphics = this.add.graphics();
 
-    graphics.lineStyle(3, 0x516170, 0.9);
+    graphics.lineStyle(1, 0xc8d7e6, 0.28);
     graphics.strokeRect(layout.originX, layout.originY, layout.width, layout.height);
 
     for (let row = 1; row < this.level.rows; row += 1) {
@@ -169,16 +160,9 @@ export class TestBoardScene extends Phaser.Scene {
       graphics.lineBetween(layout.originX, y, layout.originX + layout.width, y);
     }
 
-    for (const cell of this.level.cells) {
-      const cellLayout = getGridCellLayout(layout, cell);
-      graphics.fillStyle(0x142330, 0.42);
-      graphics.fillRoundedRect(
-        cellLayout.centerX - cellLayout.width * 0.44,
-        cellLayout.centerY - cellLayout.height * 0.44,
-        cellLayout.width * 0.88,
-        cellLayout.height * 0.88,
-        18
-      );
+    for (let column = 1; column < this.level.columns; column += 1) {
+      const x = layout.originX + column * layout.cellWidth;
+      graphics.lineBetween(x, layout.originY, x, layout.originY + layout.height);
     }
   }
 
@@ -186,22 +170,19 @@ export class TestBoardScene extends Phaser.Scene {
     for (const cell of this.level.cells) {
       switch (cell.component.type) {
         case "dispatcherDown":
-          this.createDispatcher(layout, cell.component, {
-            column: cell.column,
-            row: cell.row
-          });
+          this.createDispatcher(layout, cell.component, cell, "down");
+          break;
+        case "dispatcherRight":
+          this.createDispatcher(layout, cell.component, cell, "right");
           break;
         case "verticalSlide":
-          this.createVerticalSlide(layout, cell.component, {
-            column: cell.column,
-            row: cell.row
-          });
+          this.createSlide(layout, cell.component, cell, "vertical");
+          break;
+        case "horizontalSlide":
+          this.createSlide(layout, cell.component, cell, "horizontal");
           break;
         case "wheel":
-          this.createWheel(layout, cell.component, {
-            column: cell.column,
-            row: cell.row
-          });
+          this.createWheel(layout, cell.component, cell);
           break;
       }
     }
@@ -209,40 +190,79 @@ export class TestBoardScene extends Phaser.Scene {
 
   private createDispatcher(
     layout: ReturnType<typeof createGridLayout>,
-    component: DispatcherDownLevelComponent,
-    cell: { column: number; row: number }
+    component: DispatcherDownLevelComponent | DispatcherRightLevelComponent,
+    cell: LevelCell,
+    direction: "down" | "right"
   ): void {
     const cellLayout = getGridCellLayout(layout, cell);
-    const dispatcher = this.add.image(cellLayout.centerX, cellLayout.centerY, DISPATCHER_KEY);
-    const maxSize = Math.min(cellLayout.width, cellLayout.height) * 0.76;
-    const dispatcherScale = maxSize / Math.max(dispatcher.width, dispatcher.height);
+    if (direction === "down") {
+      this.createDispatcherConnectorSlide(layout, cell);
+    } else {
+      this.createDispatcherRightConnectorSlide(layout, cell);
+    }
+    const maxSize = Math.min(cellLayout.width, cellLayout.height) * 0.94;
 
-    dispatcher.setScale(dispatcherScale);
-    dispatcher.setInteractive({ useHandCursor: true });
-    dispatcher.on("pointerdown", () => this.dispatchBall());
+    const dispatcherView = new DispatcherView(this, {
+      x: cellLayout.centerX,
+      y: cellLayout.centerY,
+      size: maxSize,
+      direction,
+      hasBall: component.hasInitialBall,
+      onPressed: () => this.dispatchBall(component.id)
+    });
 
-    const ball = this.add.image(cellLayout.centerX, cellLayout.centerY, BALL_KEY);
-    ball.setScale((dispatcher.width * 0.16 * dispatcherScale) / ball.width);
-
-    this.dispatcherBall = ball;
+    this.dispatcherViews.set(component.id, dispatcherView);
     this.componentCenters.set(component.id, {
       x: cellLayout.centerX,
       y: cellLayout.centerY
     });
   }
 
-  private createVerticalSlide(
+  private createDispatcherConnectorSlide(
     layout: ReturnType<typeof createGridLayout>,
-    component: VerticalSlideLevelComponent,
-    cell: { column: number; row: number }
+    dispatcherCell: LevelCell
+  ): void {
+    const cellLayout = getDispatcherConnectorLayout(layout, dispatcherCell);
+
+    new SlideView(this, {
+      x: cellLayout.centerX,
+      y: cellLayout.centerY,
+      width: cellLayout.width,
+      height: cellLayout.height,
+      direction: "vertical"
+    });
+  }
+
+  private createDispatcherRightConnectorSlide(
+    layout: ReturnType<typeof createGridLayout>,
+    dispatcherCell: LevelCell
+  ): void {
+    const cellLayout = getDispatcherRightConnectorLayout(layout, dispatcherCell);
+
+    new SlideView(this, {
+      x: cellLayout.centerX,
+      y: cellLayout.centerY,
+      width: cellLayout.width,
+      height: cellLayout.height,
+      direction: "horizontal"
+    });
+  }
+
+  private createSlide(
+    layout: ReturnType<typeof createGridLayout>,
+    component: VerticalSlideLevelComponent | HorizontalSlideLevelComponent,
+    cell: LevelCell,
+    direction: "horizontal" | "vertical"
   ): void {
     const cellLayout = getGridCellLayout(layout, cell);
-    const slide = this.add.image(cellLayout.centerX, cellLayout.centerY, SLIDE_KEY);
-    const maxWidth = cellLayout.width * 0.76;
-    const maxHeight = cellLayout.height * 0.76;
-    const slideScale = Math.min(maxWidth / slide.width, maxHeight / slide.height);
 
-    slide.setScale(slideScale);
+    new SlideView(this, {
+      x: cellLayout.centerX,
+      y: cellLayout.centerY,
+      width: cellLayout.width,
+      height: cellLayout.height,
+      direction
+    });
     this.componentCenters.set(component.id, {
       x: cellLayout.centerX,
       y: cellLayout.centerY
@@ -252,77 +272,106 @@ export class TestBoardScene extends Phaser.Scene {
   private createWheel(
     layout: ReturnType<typeof createGridLayout>,
     component: WheelLevelComponent,
-    cell: { column: number; row: number }
+    cell: LevelCell
   ): void {
     const cellLayout = getGridCellLayout(layout, cell);
-    const wheel = this.add.image(0, 0, WHEEL_KEY);
-    const ball = this.add.image(0, 0, BALL_KEY);
-    const assembly = this.add.container(cellLayout.centerX, cellLayout.centerY, [wheel]);
-    const maxWheelSize = Math.min(cellLayout.width, cellLayout.height) * 0.72;
-    const wheelScale = maxWheelSize / wheel.width;
-    const holeRadius = wheel.width * 0.348;
-    const ballSize = wheel.width * 0.145 * wheelScale;
+    this.createWheelConnectorSlide(layout, cell);
+    this.createWheelLeftConnectorSlide(layout, cell);
+    const maxWheelSize = Math.min(cellLayout.width, cellLayout.height) * 0.94;
 
-    wheel.setScale(wheelScale);
-    ball.setScale(ballSize / ball.width);
-    ball.setPosition(cellLayout.centerX, cellLayout.centerY - holeRadius * wheelScale);
-    this.wheelBallRadius = holeRadius * wheelScale;
-    ball.setVisible(false);
-    wheel.setInteractive({ useHandCursor: true });
-    wheel.on("pointerdown", () => this.rotateWheel());
-
-    this.wheelAssembly = assembly;
-    this.wheelBall = ball;
-    this.children.bringToTop(ball);
+    this.wheelView = new WheelView(this, {
+      x: cellLayout.centerX,
+      y: cellLayout.centerY,
+      size: maxWheelSize,
+      slotCount: component.slotCount,
+      hasBall: false,
+      ballLocalSlotIndex: null,
+      onPressed: () => this.rotateWheel()
+    });
     this.componentCenters.set(component.id, {
       x: cellLayout.centerX,
       y: cellLayout.centerY
     });
   }
 
+  private createWheelConnectorSlide(
+    layout: ReturnType<typeof createGridLayout>,
+    wheelCell: LevelCell
+  ): void {
+    const cellLayout = getWheelConnectorLayout(layout, wheelCell);
+
+    new SlideView(this, {
+      x: cellLayout.centerX,
+      y: cellLayout.centerY,
+      width: cellLayout.width,
+      height: cellLayout.height,
+      direction: "vertical"
+    });
+  }
+
+  private createWheelLeftConnectorSlide(
+    layout: ReturnType<typeof createGridLayout>,
+    wheelCell: LevelCell
+  ): void {
+    const cellLayout = getWheelLeftConnectorLayout(layout, wheelCell);
+
+    new SlideView(this, {
+      x: cellLayout.centerX,
+      y: cellLayout.centerY,
+      width: cellLayout.width,
+      height: cellLayout.height,
+      direction: "horizontal"
+    });
+  }
+
   private syncAuthoritativeVisuals(): void {
     const snapshot = this.controller.getSnapshot();
 
-    this.wheelBallLocalSlotIndex = snapshot.wheel.ballLocalSlotIndex;
-    this.syncWheelBallPose();
+    this.wheelView?.setWheelSlots(snapshot.transitInProgress ? [] : snapshot.wheel.slots);
 
-    if (this.dispatcherBall) {
-      this.dispatcherBall.setVisible(snapshot.dispatcher.hasBall);
+    for (const dispatcher of snapshot.dispatchers) {
+      this.dispatcherViews.get(dispatcher.id)?.setBallVisible(dispatcher.hasBall);
     }
-
-    if (this.wheelBall) {
-      this.wheelBall.setVisible(snapshot.wheel.hasBall && !snapshot.transitInProgress);
-    }
-
   }
 
-  private dispatchBall(): void {
-    const instruction = this.controller.requestDispatch();
+  private dispatchBall(dispatcherId = this.controlledDispatcherId): void {
+    const instruction = this.controller.requestDispatch(dispatcherId);
 
     if (!instruction) {
       return;
     }
 
-    const dispatcherCenter = this.componentCenters.get(instruction.dispatcherId);
     const wheelCenter = this.componentCenters.get(instruction.wheelId);
+    const dispatcherView = this.dispatcherViews.get(instruction.dispatcherId);
+    const dispatcherBallPosition = dispatcherView?.getBallWorldPosition();
 
-    if (!dispatcherCenter || !wheelCenter || !this.wheelBall) {
+    if (!dispatcherBallPosition || !wheelCenter || !this.wheelView || !dispatcherView) {
       return;
     }
 
-    this.dispatcherBall?.setVisible(false);
-    this.wheelBallLocalSlotIndex = this.controller.getSnapshot().wheel.ballLocalSlotIndex;
-    this.syncWheelBallPose();
+    const snapshot = this.controller.getSnapshot();
+    const landedEvent = snapshot.lastEvents.find((event) => event.type === "BALL_LANDED_IN_WHEEL");
 
-    if (!this.transitBall) {
-      this.transitBall = this.add.image(dispatcherCenter.x, dispatcherCenter.y, BALL_KEY);
-      this.transitBall.setScale(this.wheelBall.scaleX);
+    if (!landedEvent) {
+      return;
     }
 
-    this.transitBall.setPosition(dispatcherCenter.x, dispatcherCenter.y);
+    dispatcherView.setBallVisible(false);
+    this.wheelView.setWheelSlots(
+      snapshot.wheel.slots.map((occupantId, index) =>
+        index === landedEvent.localSlotIndex ? null : occupantId
+      )
+    );
+
+    if (!this.transitBall) {
+      this.transitBall = this.add.image(dispatcherBallPosition.x, dispatcherBallPosition.y, PEARL_KEY);
+    }
+
+    this.transitBall.setScale(dispatcherView.getBallScale());
+    this.transitBall.setPosition(dispatcherBallPosition.x, dispatcherBallPosition.y);
     this.transitBall.setVisible(true);
 
-    const wheelBallWorldPosition = this.getWheelBallWorldPosition();
+    const wheelBallWorldPosition = this.getWheelBallWorldPosition(landedEvent.localSlotIndex);
 
     if (!wheelBallWorldPosition) {
       return;
@@ -342,38 +391,8 @@ export class TestBoardScene extends Phaser.Scene {
     });
   }
 
-  private syncWheelBallPose(): void {
-    if (!this.wheelBall || !this.wheelAssembly) {
-      return;
-    }
-
-    if (this.wheelBallLocalSlotIndex === null) {
-      return;
-    }
-
-    const baseAngle =
-      ((this.wheelBallLocalSlotIndex % WHEEL_SLOT_COUNT) / WHEEL_SLOT_COUNT) *
-        Math.PI *
-        2 -
-      Math.PI / 2;
-    const angle = baseAngle + this.wheelAssembly.rotation;
-
-    this.wheelBall.setPosition(
-      this.wheelAssembly.x + Math.cos(angle) * this.wheelBallRadius,
-      this.wheelAssembly.y + Math.sin(angle) * this.wheelBallRadius
-    );
-  }
-
-  private getWheelBallWorldPosition(): ComponentCenter | null {
-    if (!this.wheelBall) {
-      return null;
-    }
-    this.syncWheelBallPose();
-
-    return {
-      x: this.wheelBall.x,
-      y: this.wheelBall.y
-    }
+  private getWheelBallWorldPosition(localSlotIndex: number): ComponentCenter | null {
+    return this.wheelView?.getBallWorldPosition(localSlotIndex) ?? null;
   }
 
   private rotateWheel(): void {
@@ -385,26 +404,10 @@ export class TestBoardScene extends Phaser.Scene {
   }
 
   private animateWheelTurn(_: WheelAnimationInstruction): void {
-    if (!this.wheelAssembly) {
+    if (!this.wheelView) {
       return;
     }
 
-    this.tweens.add({
-      targets: this.wheelAssembly,
-      rotation: this.wheelAssembly.rotation + WHEEL_TURN_RADIANS,
-      duration: SUBSTEP_DURATION_MS * SUBSTEPS_PER_TURN,
-      ease: "Cubic.Out",
-      onUpdate: () => {
-        this.syncWheelBallPose();
-      },
-      onComplete: () => {
-        this.syncWheelBallPose();
-        const nextInstruction = this.controller.completeWheelAnimation();
-
-        if (nextInstruction) {
-          this.animateWheelTurn(nextInstruction);
-        }
-      }
-    });
+    this.wheelView.animateTurn(_, () => this.controller.completeWheelAnimation());
   }
 }

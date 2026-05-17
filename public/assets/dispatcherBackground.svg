@@ -1,0 +1,31 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="holeDepth" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#4a4a4a"/>
+      <stop offset="55%" stop-color="#151515"/>
+      <stop offset="100%" stop-color="#000000"/>
+    </linearGradient>
+  </defs>
+
+  <circle cx="256" cy="248" r="54.9" fill="url(#holeDepth)"/>
+  <circle cx="256" cy="248" r="38.8" fill="#000000"/>
+  <circle cx="239" cy="228" r="9" fill="#ffffff" opacity="0.10"/>
+
+  <path d="
+    M 201.1 448
+    L 201.1 390
+    C 201.1 362, 225.6 342, 256 342
+    C 286.4 342, 310.9 362, 310.9 390
+    L 310.9 448
+    Z"
+    fill="url(#holeDepth)"/>
+
+  <path d="
+    M 214 448
+    L 214 396
+    C 214 376, 230 362, 256 362
+    C 282 362, 298 376, 298 396
+    L 298 448
+    Z"
+    fill="#000000"/>
+</svg>

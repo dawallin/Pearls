@@ -727,7 +727,7 @@ timeline
 │  ├─ levels/
 │  │  ├─ test/
 │  │  │  ├─ e2e-basic.ts
-│  │  │  └─ testWheel1x1Level.ts
+│  │  │  └─ testWheel3x3Level.ts
 │  │  └─ game/
 │  └─ runtime/
 │     ├─ loop.ts

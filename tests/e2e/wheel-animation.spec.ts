@@ -1,9 +1,9 @@
 import { expect, test } from "@playwright/test";
 
-test("keeps 1x1 wheel animation moving smoothly in one direction during a turn", async ({
+test("keeps 3x3 wheel animation moving smoothly in one direction during a turn", async ({
   page
 }) => {
-  await page.goto("/?test=test-0");
+  await page.goto("/?test=test-1");
   await page.waitForFunction(() => Boolean(globalThis.__PEARLS__));
 
   const canvas = page.locator("canvas");

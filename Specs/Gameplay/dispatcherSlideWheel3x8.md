@@ -1,8 +1,8 @@
-# Dispatcher Slide Wheel 1x3
+# Dispatcher Slide Wheel 3x8
 
 ## Purpose
 
-Define the first multi-component Pearls test board with a dispatcher, a vertical slide, and a wheel arranged in a single column.
+Define the first multi-component Pearls test board with a 3x3 dispatcher, two vertical slide cells, and a 3x3 wheel arranged in one connected vertical path.
 
 ## Status
 
@@ -12,10 +12,10 @@ accepted
 
 In scope:
 
-- a `1x3` test level
-- one `dispatcherDown` at the top cell
-- one `verticalSlide` in the middle cell
-- one wheel in the bottom cell
+- a `3x8` test level
+- one `dispatcherDown` spanning the top `3x3` area
+- two `verticalSlide` cells in the center column
+- one wheel spanning the bottom `3x3` area
 - one initial ball in the dispatcher
 - dispatch interaction
 - the ball landing in the wheel
@@ -41,10 +41,10 @@ After the ball is in the wheel, pressing the wheel rotates it clockwise and the 
 
 ## Rules
 
-1. The board is a `1x3` grid.
-2. The top cell contains a `dispatcherDown`.
-3. The middle cell contains a `verticalSlide`.
-4. The bottom cell contains a wheel with `8` slots.
+1. The board is a `3x8` grid.
+2. The top `3x3` area contains a `dispatcherDown`.
+3. Rows `3` and `4` in the center column contain two connected `verticalSlide` cells.
+4. The bottom `3x3` area contains a wheel with `8` slots.
 5. The dispatcher starts with exactly one ball.
 6. Pressing the dispatcher consumes that ball and sends it downward.
 7. The ball lands in the upward-facing connected wheel hole.
@@ -56,7 +56,7 @@ After the ball is in the wheel, pressing the wheel rotates it clockwise and the 
 
 ## Acceptance Criteria
 
-- The level definition is a `1x3` test level in `src/core/levels/test/`.
+- The level definition is a `3x8` test level in `src/core/levels/test/`.
 - The dispatcher visibly starts with a ball.
 - Pressing the dispatcher removes the ball from the dispatcher and animates it down the slide.
 - The ball ends up visually attached to the wheel.
@@ -78,7 +78,7 @@ The runtime animation must not decide whether the ball landed or whether the whe
 
 ## Level Or Content Notes
 
-This spec uses the test level `testDispatcherSlideWheel1x3Level`.
+This spec uses the test level `testDispatcherSlideWheel3x8Level`.
 
 ## Required Tests
 

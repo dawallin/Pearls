@@ -1,35 +1,24 @@
 import Phaser from "phaser";
 
-import { testWheel1x1Level } from "../../core/levels/test/testWheel1x1Level";
-import type { WheelLevelComponent } from "../../core/level/gridLevel";
+import { testWheel3x3Level } from "../../core/levels/test/testWheel3x3Level";
+import type { LevelCell, WheelLevelComponent } from "../../core/level/gridLevel";
 import { installPearlsDebug } from "../debug/installPearlsDebug";
 import {
   WheelController,
   type WheelAnimationInstruction
 } from "../game/WheelController";
 import { createGridLayout, getGridCellLayout } from "../layout/gridLayout";
+import { createPearlTexture, preloadPearlAssets } from "../render/pearl/pearlAssets";
+import { WheelView } from "../render/wheel/WheelView";
+import { preloadWheelAssets } from "../render/wheel/wheelAssets";
 
-const WHEEL_KEY = "wheel";
-const BALL_SOURCE_KEY = "ball-source";
-const BALL_KEY = "ball";
-const SUBSTEPS_PER_TURN = 3;
-const SUBSTEP_DURATION_MS = 70;
-const WHEEL_TURN_RADIANS = Math.PI / 4;
-const BALL_TEXTURE_SIZE = 192;
-const BALL_SOURCE_CROP = {
-  x: 422,
-  y: 112,
-  size: 184
-};
 export class TestWheelScene extends Phaser.Scene {
-  private readonly level = testWheel1x1Level;
+  private readonly level = testWheel3x3Level;
   private readonly controller = new WheelController({
     wheelId: "wheel-01",
     slotCount: 8
   });
-  private wheelAssembly?: Phaser.GameObjects.Container;
-  private wheelBall?: Phaser.GameObjects.Image;
-  private wheelBallRadius = 0;
+  private wheelView?: WheelView;
 
   constructor() {
     super("test-wheel");
@@ -37,13 +26,13 @@ export class TestWheelScene extends Phaser.Scene {
 
   preload(): void {
     this.load.setBaseURL(import.meta.env.BASE_URL);
-    this.load.image(WHEEL_KEY, "assets/Wheel.png");
-    this.load.image(BALL_SOURCE_KEY, "assets/RedBall.png");
+    preloadPearlAssets(this);
+    preloadWheelAssets(this);
   }
 
   create(): void {
     const { width, height } = this.scale;
-    this.createBallTexture();
+    createPearlTexture(this);
     const layout = createGridLayout(this.level, width, height);
 
     this.add
@@ -63,10 +52,7 @@ export class TestWheelScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     this.drawGrid(layout);
-    this.createWheel(layout, this.level.cells[0].component as WheelLevelComponent, {
-      column: 0,
-      row: 0
-    });
+    this.createWheel(layout, this.level.cells[0].component as WheelLevelComponent, this.level.cells[0]);
 
     const uninstallDebug = installPearlsDebug({
       getSnapshot: () => ({
@@ -76,7 +62,7 @@ export class TestWheelScene extends Phaser.Scene {
           columns: this.level.columns,
           rows: this.level.rows
         },
-        wheel: this.controller.getSnapshot(this.wheelAssembly?.rotation ?? 0)
+        wheel: this.controller.getSnapshot(this.wheelView?.rotation ?? 0)
       }),
       pressDispatcher: () => {},
       requestRotateTurn: () => this.rotateWheel()
@@ -91,74 +77,40 @@ export class TestWheelScene extends Phaser.Scene {
     this.scene.restart();
   }
 
-  private createBallTexture(): void {
-    if (this.textures.exists(BALL_KEY)) {
-      this.textures.remove(BALL_KEY);
-    }
-
-    const source = this.textures.get(BALL_SOURCE_KEY).getSourceImage() as CanvasImageSource;
-    const texture = this.textures.createCanvas(BALL_KEY, BALL_TEXTURE_SIZE, BALL_TEXTURE_SIZE);
-
-    if (!texture) {
-      return;
-    }
-
-    texture.context.drawImage(
-      source,
-      BALL_SOURCE_CROP.x,
-      BALL_SOURCE_CROP.y,
-      BALL_SOURCE_CROP.size,
-      BALL_SOURCE_CROP.size,
-      0,
-      0,
-      BALL_TEXTURE_SIZE,
-      BALL_TEXTURE_SIZE
-    );
-    texture.refresh();
-  }
-
   private drawGrid(layout: ReturnType<typeof createGridLayout>): void {
     const graphics = this.add.graphics();
 
-    graphics.lineStyle(3, 0x516170, 0.9);
+    graphics.lineStyle(1, 0xc8d7e6, 0.28);
     graphics.strokeRect(layout.originX, layout.originY, layout.width, layout.height);
 
-    const cellLayout = getGridCellLayout(layout, { column: 0, row: 0 });
-    graphics.fillStyle(0x142330, 0.42);
-    graphics.fillRoundedRect(
-      cellLayout.centerX - cellLayout.width * 0.44,
-      cellLayout.centerY - cellLayout.height * 0.44,
-      cellLayout.width * 0.88,
-      cellLayout.height * 0.88,
-      18
-    );
+    for (let row = 1; row < this.level.rows; row += 1) {
+      const y = layout.originY + row * layout.cellHeight;
+      graphics.lineBetween(layout.originX, y, layout.originX + layout.width, y);
+    }
+
+    for (let column = 1; column < this.level.columns; column += 1) {
+      const x = layout.originX + column * layout.cellWidth;
+      graphics.lineBetween(x, layout.originY, x, layout.originY + layout.height);
+    }
   }
 
   private createWheel(
     layout: ReturnType<typeof createGridLayout>,
-    _: WheelLevelComponent,
-    cell: { column: number; row: number }
+    component: WheelLevelComponent,
+    cell: LevelCell
   ): void {
     const cellLayout = getGridCellLayout(layout, cell);
-    const wheel = this.add.image(0, 0, WHEEL_KEY);
-    const ball = this.add.image(0, 0, BALL_KEY);
-    const assembly = this.add.container(cellLayout.centerX, cellLayout.centerY, [wheel]);
-    const maxWheelSize = Math.min(cellLayout.width, cellLayout.height) * 0.72;
-    const wheelScale = maxWheelSize / wheel.width;
-    const holeRadius = wheel.width * 0.348;
-    const ballSize = wheel.width * 0.145 * wheelScale;
+    const maxWheelSize = Math.min(cellLayout.width, cellLayout.height) * 0.94;
 
-    wheel.setScale(wheelScale);
-    ball.setScale(ballSize / ball.width);
-    ball.setPosition(cellLayout.centerX, cellLayout.centerY - holeRadius * wheelScale);
-    this.wheelBallRadius = holeRadius * wheelScale;
-    wheel.setInteractive({ useHandCursor: true });
-    wheel.on("pointerdown", () => this.rotateWheel());
-
-    this.wheelAssembly = assembly;
-    this.wheelBall = ball;
-    this.children.bringToTop(ball);
-    this.syncWheelBallPose();
+    this.wheelView = new WheelView(this, {
+      x: cellLayout.centerX,
+      y: cellLayout.centerY,
+      size: maxWheelSize,
+      slotCount: component.slotCount,
+      hasBall: true,
+      ballLocalSlotIndex: 0,
+      onPressed: () => this.rotateWheel()
+    });
   }
 
   private rotateWheel(): void {
@@ -169,40 +121,13 @@ export class TestWheelScene extends Phaser.Scene {
     }
   }
 
-  private animateWheelTurn(_: WheelAnimationInstruction): void {
-    if (!this.wheelAssembly) {
+  private animateWheelTurn(instruction: WheelAnimationInstruction): void {
+    if (!this.wheelView) {
       return;
     }
 
-    this.tweens.add({
-      targets: this.wheelAssembly,
-      rotation: this.wheelAssembly.rotation + WHEEL_TURN_RADIANS,
-      duration: SUBSTEP_DURATION_MS * SUBSTEPS_PER_TURN,
-      ease: "Cubic.Out",
-      onUpdate: () => {
-        this.syncWheelBallPose();
-      },
-      onComplete: () => {
-        this.syncWheelBallPose();
-        const nextInstruction = this.controller.completeAnimation();
-
-        if (nextInstruction) {
-          this.animateWheelTurn(nextInstruction);
-        }
-      }
-    });
-  }
-
-  private syncWheelBallPose(): void {
-    if (!this.wheelAssembly || !this.wheelBall) {
-      return;
-    }
-
-    const angle = this.wheelAssembly.rotation - Math.PI / 2;
-
-    this.wheelBall.setPosition(
-      this.wheelAssembly.x + Math.cos(angle) * this.wheelBallRadius,
-      this.wheelAssembly.y + Math.sin(angle) * this.wheelBallRadius
+    this.wheelView.animateTurn(instruction, () =>
+      this.controller.completeAnimation()
     );
   }
 }
