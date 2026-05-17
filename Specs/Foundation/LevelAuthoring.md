@@ -37,7 +37,7 @@ Levels are defined on a grid with explicit size:
 - `columns`
 - `rows`
 
-Each cell may contain zero or one component unless a later foundation spec explicitly introduces layered cells.
+Each cell may be occupied by zero or one component. A component may span multiple cells, and every covered cell counts as occupied by that component.
 
 The initial supported component set may be small. The schema should still be designed so additional component types can be added without rewriting unrelated level structure.
 
@@ -47,6 +47,7 @@ Each component placed in a level must:
 
 - have an explicit type
 - have a stable identifier
+- declare its grid position and, when larger than one cell, its grid span
 - carry the minimum configuration needed by deterministic core logic
 
 Component behavior belongs to component systems, not to level files.
@@ -63,9 +64,9 @@ Prefer the smallest possible test level that proves the intended behavior.
 
 Examples:
 
-- `1x1` for one wheel
+- `3x3` for one full-size wheel
 - `2x1` for two adjacent components
-- `3x2` for a small interaction network
+- `3x8` for a dispatcher, two slide cells, and a wheel
 
 ## Game Level Rule
 

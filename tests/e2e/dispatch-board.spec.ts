@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 test("dispatches the ball down the board and then rotates the wheel clockwise", async ({
   page
 }) => {
-  await page.goto("/?test=test-1");
+  await page.goto("/?test=test-2");
   await page.waitForFunction(() => Boolean(globalThis.__PEARLS__));
 
   const canvas = page.locator("canvas");
@@ -116,10 +116,10 @@ test("dispatches the ball down the board and then rotates the wheel clockwise", 
   });
 
   expect(landedSnapshot).toMatchObject({
-    levelId: "test-dispatcher-slide-wheel-1x3",
+    levelId: "test-dispatcher-slide-wheel-3x8",
     grid: {
-      columns: 1,
-      rows: 3
+      columns: 3,
+      rows: 8
     }
   });
   expect(landedSnapshot.components.dispatcher.hasBall).toBe(false);

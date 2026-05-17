@@ -81,4 +81,42 @@ describe("dispatchBoardWorld", () => {
     expect(snapshot.wheel.rotationStep).toBe(1);
     expect(snapshot.wheel.ballLocalSlotIndex).toBe(7);
   });
+
+  it("dispatches from multiple dispatchers into different connected wheel slots", () => {
+    const world = createDispatchBoardWorld({
+      dispatchers: [
+        {
+          id: "dispatcher-top",
+          slideId: "slide-top",
+          hasInitialBall: true,
+          connectedWorldSlotIndex: 0
+        },
+        {
+          id: "dispatcher-left",
+          slideId: "slide-left",
+          hasInitialBall: true,
+          connectedWorldSlotIndex: 6
+        }
+      ],
+      wheelId: "wheel-a",
+      wheelSlotCount: 8
+    });
+
+    dispatchBall(world, "dispatcher-top");
+    dispatchBall(world, "dispatcher-left");
+    const snapshot = getDispatchBoardSnapshot(world);
+
+    expect(snapshot.dispatchers).toMatchObject([
+      {
+        id: "dispatcher-top",
+        hasBall: false
+      },
+      {
+        id: "dispatcher-left",
+        hasBall: false
+      }
+    ]);
+    expect(snapshot.wheel.slots[0]).toBe("dispatcher-top:ball");
+    expect(snapshot.wheel.slots[6]).toBe("dispatcher-left:ball");
+  });
 });

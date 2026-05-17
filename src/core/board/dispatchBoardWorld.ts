@@ -1,6 +1,5 @@
 import {
   createWheelState,
-  findWheelOccupantLocalSlotIndex,
   getWheelSlotsSnapshot,
   getWheelWorldSlotOccupant,
   mod,
@@ -9,7 +8,9 @@ import {
   type MutableWheelState
 } from "../wheel/wheelState";
 
-const DISPATCHER_BALL_ID = "dispatcher-ball";
+function toDispatcherBallId(dispatcherId: string): string {
+  return `${dispatcherId}:ball`;
+}
 
 export type DispatchBoardEvent =
   | Readonly<{
@@ -34,13 +35,21 @@ export type DispatchBoardEvent =
     }>;
 
 export type DispatchBoardConfig = Readonly<{
-  dispatcherId: string;
-  slideId: string;
+  dispatcherId?: string;
+  slideId?: string;
+  dispatchers?: readonly DispatchBoardDispatcherConfig[];
   wheelId: string;
   wheelSlotCount: number;
   dispatcherHasInitialBall?: boolean;
   initialRotationStep?: number;
   connectedLocalSlotIndex?: number;
+}>;
+
+export type DispatchBoardDispatcherConfig = Readonly<{
+  id: string;
+  slideId: string;
+  hasInitialBall?: boolean;
+  connectedWorldSlotIndex?: number;
 }>;
 
 export type DispatchBoardSnapshot = Readonly<{
@@ -49,6 +58,12 @@ export type DispatchBoardSnapshot = Readonly<{
     id: string;
     hasBall: boolean;
   }>;
+  dispatchers: readonly Readonly<{
+    id: string;
+    slideId: string;
+    hasBall: boolean;
+    connectedWorldSlotIndex: number;
+  }>[];
   slide: Readonly<{
     id: string;
   }>;
@@ -64,16 +79,15 @@ export type DispatchBoardSnapshot = Readonly<{
 
 export type DispatchBoardWorld = {
   tick: number;
-  dispatcher: {
+  dispatchers: Map<string, {
     id: string;
+    slideId: string;
     hasBall: boolean;
-  };
-  slide: {
-    id: string;
-  };
+    connectedWorldSlotIndex: number;
+  }>;
+  primaryDispatcherId: string;
   wheel: MutableWheelState;
   lastEvents: DispatchBoardEvent[];
-  connectedWorldSlotIndex: number;
 };
 
 export function createDispatchBoardWorld(
@@ -83,59 +97,92 @@ export function createDispatchBoardWorld(
     throw new Error("wheelSlotCount must be a positive integer.");
   }
 
-  const connectedWorldSlotIndex = mod(
-    config.connectedLocalSlotIndex ?? 0,
-    config.wheelSlotCount
-  );
+  const dispatcherConfigs = config.dispatchers ?? [
+    {
+      id: config.dispatcherId ?? "dispatcher",
+      slideId: config.slideId ?? "slide",
+      hasInitialBall: config.dispatcherHasInitialBall ?? true,
+      connectedWorldSlotIndex: config.connectedLocalSlotIndex ?? 0
+    }
+  ];
+
+  if (dispatcherConfigs.length === 0) {
+    throw new Error("Dispatch board must have at least one dispatcher.");
+  }
+
+  const dispatchers = new Map<string, {
+    id: string;
+    slideId: string;
+    hasBall: boolean;
+    connectedWorldSlotIndex: number;
+  }>();
+
+  for (const dispatcherConfig of dispatcherConfigs) {
+    if (dispatchers.has(dispatcherConfig.id)) {
+      throw new Error(`Duplicate dispatcher "${dispatcherConfig.id}".`);
+    }
+
+    dispatchers.set(dispatcherConfig.id, {
+      id: dispatcherConfig.id,
+      slideId: dispatcherConfig.slideId,
+      hasBall: dispatcherConfig.hasInitialBall ?? true,
+      connectedWorldSlotIndex: mod(
+        dispatcherConfig.connectedWorldSlotIndex ?? 0,
+        config.wheelSlotCount
+      )
+    });
+  }
 
   return {
     tick: 0,
-    dispatcher: {
-      id: config.dispatcherId,
-      hasBall: config.dispatcherHasInitialBall ?? true
-    },
-    slide: {
-      id: config.slideId
-    },
+    dispatchers,
+    primaryDispatcherId: dispatcherConfigs[0].id,
     wheel: createWheelState({
       id: config.wheelId,
       slotCount: config.wheelSlotCount,
       initialRotationStep: config.initialRotationStep
     }),
-    lastEvents: [],
-    connectedWorldSlotIndex
+    lastEvents: []
   };
 }
 
 export function dispatchBall(
-  world: DispatchBoardWorld
+  world: DispatchBoardWorld,
+  dispatcherId = world.primaryDispatcherId
 ): readonly DispatchBoardEvent[] {
+  const dispatcher = world.dispatchers.get(dispatcherId);
+
+  if (!dispatcher) {
+    world.lastEvents = [];
+    return world.lastEvents;
+  }
+
   if (
-    !world.dispatcher.hasBall ||
-    getWheelWorldSlotOccupant(world.wheel, world.connectedWorldSlotIndex) !== null
+    !dispatcher.hasBall ||
+    getWheelWorldSlotOccupant(world.wheel, dispatcher.connectedWorldSlotIndex) !== null
   ) {
     world.lastEvents = [];
     return world.lastEvents;
   }
 
   world.tick += 1;
-  world.dispatcher.hasBall = false;
+  dispatcher.hasBall = false;
   const localSlotIndex = setWheelWorldSlotOccupant(
     world.wheel,
-    world.connectedWorldSlotIndex,
-    DISPATCHER_BALL_ID
+    dispatcher.connectedWorldSlotIndex,
+    toDispatcherBallId(dispatcher.id)
   );
 
   world.lastEvents = [
     {
       type: "BALL_DISPATCHED",
-      dispatcherId: world.dispatcher.id,
-      slideId: world.slide.id,
+      dispatcherId: dispatcher.id,
+      slideId: dispatcher.slideId,
       tick: world.tick
     },
     {
       type: "BALL_LANDED_IN_WHEEL",
-      slideId: world.slide.id,
+      slideId: dispatcher.slideId,
       wheelId: world.wheel.id,
       localSlotIndex,
       tick: world.tick
@@ -167,20 +214,32 @@ export function rotateWheelClockwise(
 export function getDispatchBoardSnapshot(
   world: DispatchBoardWorld
 ): DispatchBoardSnapshot {
+  const dispatchers = [...world.dispatchers.values()].map((dispatcher) => ({
+    id: dispatcher.id,
+    slideId: dispatcher.slideId,
+    hasBall: dispatcher.hasBall,
+    connectedWorldSlotIndex: dispatcher.connectedWorldSlotIndex
+  }));
+  const primaryDispatcher = world.dispatchers.get(world.primaryDispatcherId) ?? dispatchers[0];
+  const firstOccupiedLocalSlotIndex = world.wheel.slots.findIndex(
+    (slotOccupantId) => slotOccupantId !== null
+  );
+
   return {
     tick: world.tick,
     dispatcher: {
-      id: world.dispatcher.id,
-      hasBall: world.dispatcher.hasBall
+      id: primaryDispatcher.id,
+      hasBall: primaryDispatcher.hasBall
     },
+    dispatchers,
     slide: {
-      id: world.slide.id
+      id: primaryDispatcher.slideId
     },
     wheel: {
       id: world.wheel.id,
       slotCount: world.wheel.slotCount,
       rotationStep: world.wheel.rotationStep,
-      ballLocalSlotIndex: findWheelOccupantLocalSlotIndex(world.wheel, DISPATCHER_BALL_ID),
+      ballLocalSlotIndex: firstOccupiedLocalSlotIndex >= 0 ? firstOccupiedLocalSlotIndex : null,
       slots: getWheelSlotsSnapshot(world.wheel)
     },
     lastEvents: world.lastEvents.map((event) => ({ ...event }))

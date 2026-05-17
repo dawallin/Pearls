@@ -7,8 +7,14 @@ import {
 } from "../../core/board/dispatchBoardWorld";
 
 export type DispatchBoardControllerConfig = Readonly<{
-  dispatcherId: string;
-  slideId: string;
+  dispatcherId?: string;
+  slideId?: string;
+  dispatchers?: readonly {
+    id: string;
+    slideId: string;
+    hasInitialBall?: boolean;
+    connectedWorldSlotIndex?: number;
+  }[];
   wheelId: string;
   wheelSlotCount: number;
   dispatcherHasInitialBall?: boolean;
@@ -33,6 +39,12 @@ export type DispatchBoardDebugSnapshot = Readonly<{
     id: string;
     hasBall: boolean;
   }>;
+  dispatchers: readonly Readonly<{
+    id: string;
+    slideId: string;
+    hasBall: boolean;
+    connectedWorldSlotIndex: number;
+  }>[];
   slide: Readonly<{
     id: string;
   }>;
@@ -72,21 +84,27 @@ export class DispatchBoardController {
     this.world = createDispatchBoardWorld(config);
   }
 
-  requestDispatch(): DispatchAnimationInstruction | null {
+  requestDispatch(dispatcherId?: string): DispatchAnimationInstruction | null {
     if (this.isTransitAnimating || this.isWheelAnimating) {
       return null;
     }
 
-    const events = dispatchBall(this.world);
+    const events = dispatchBall(this.world, dispatcherId);
 
     if (events.length === 0) {
       return null;
     }
 
+    const dispatchEvent = events.find((event) => event.type === "BALL_DISPATCHED");
+
+    if (!dispatchEvent) {
+      return null;
+    }
+
     this.isTransitAnimating = true;
     return {
-      dispatcherId: this.world.dispatcher.id,
-      slideId: this.world.slide.id,
+      dispatcherId: dispatchEvent.dispatcherId,
+      slideId: dispatchEvent.slideId,
       wheelId: this.world.wheel.id
     };
   }
@@ -115,6 +133,7 @@ export class DispatchBoardController {
     return {
       tick: snapshot.tick,
       dispatcher: snapshot.dispatcher,
+      dispatchers: snapshot.dispatchers,
       slide: snapshot.slide,
       wheel: {
         id: snapshot.wheel.id,

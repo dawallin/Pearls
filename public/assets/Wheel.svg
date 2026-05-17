@@ -1,0 +1,114 @@
+<svg width="306" height="306" viewBox="47 47 306 306" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+
+    <!-- soft drop shadow for the whole disk -->
+    <filter id="diskShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="6" stdDeviation="6" flood-color="#000000" flood-opacity="0.18"/>
+    </filter>
+
+    <!-- specular highlight spot (very smooth, no visible edge) -->
+    <radialGradient id="diskHighlight" cx="50%" cy="50%" r="70%">
+      <stop offset="0%"  stop-color="#ffffff" stop-opacity="0.22"/>
+      <stop offset="35%" stop-color="#ffffff" stop-opacity="0.10"/>
+      <stop offset="70%" stop-color="#ffffff" stop-opacity="0.04"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+
+
+    <!-- spherical wood gradient (smooth, no mid-ring banding) -->
+    <radialGradient id="woodSphere" cx="50%" cy="45%" r="60%">
+      <stop offset="0%"   stop-color="#e3c78f"/>
+      <stop offset="25%"  stop-color="#d9b878"/>
+      <stop offset="45%"  stop-color="#d0aa69"/>
+      <stop offset="60%"  stop-color="#c89b5a"/>
+      <stop offset="72%"  stop-color="#bf914f"/>
+      <stop offset="82%"  stop-color="#b48545"/>
+      <stop offset="90%"  stop-color="#a7773f"/>
+      <stop offset="96%"  stop-color="#996a38"/>
+      <stop offset="100%" stop-color="#8f6332"/>
+    </radialGradient>
+
+
+    <!-- wood texture (procedural) - clipped strictly to the disk -->
+    <filter id="woodTextureBlend" filterUnits="objectBoundingBox" x="0" y="0" width="1" height="1">
+      <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="7" result="noise"/>
+      <feColorMatrix in="noise" type="saturate" values="0" result="mono"/>
+      <feComponentTransfer in="mono" result="noiseSoft">
+        <feFuncR type="gamma" amplitude="1" exponent="1.35" offset="0"/>
+        <feFuncG type="gamma" amplitude="1" exponent="1.35" offset="0"/>
+        <feFuncB type="gamma" amplitude="1" exponent="1.35" offset="0"/>
+      </feComponentTransfer>
+      <feBlend in="SourceGraphic" in2="noiseSoft" mode="multiply"/>
+    </filter>
+
+    <clipPath id="diskClip" clipPathUnits="userSpaceOnUse">
+      <circle cx="200" cy="200" r="150"/>
+    </clipPath>
+  </defs>
+
+  <!-- wood disk -->
+    <!-- wood disk (textured), clipped to disk only -->
+  <g clip-path="url(#diskClip)" filter="url(#diskShadow)">
+    <circle cx="200" cy="200" r="150" fill="url(#woodSphere)" filter="url(#woodTextureBlend)"/>
+  </g>
+  <!-- highlight spot to enhance 3D feel (still flat) -->
+  <g clip-path="url(#diskClip)" opacity="0.9">
+    <circle cx="200" cy="170" r="135" fill="url(#diskHighlight)"/>
+  </g>
+
+
+  <circle cx="200" cy="200" r="150" fill="none" stroke="#8b5a2b" stroke-width="6"/>
+
+  <!-- pockets -->
+  <g clip-path="url(#diskClip)">
+    
+      <g>
+        <circle cx="200.000" cy="88.800" r="32.800" fill="#1a1a1a"/>
+        <path d="M 167.200 88.800 L 232.800 88.800 L 232.800 -91.200 L 167.200 -91.200 Z" fill="#1a1a1a"/>
+      </g>
+    
+      <g>
+        <circle cx="278.630" cy="121.370" r="32.800" fill="#1a1a1a"/>
+        <path d="M 255.437 98.177 L 301.823 144.563 L 429.103 17.284 L 382.716 -29.103 Z" fill="#1a1a1a"/>
+      </g>
+    
+      <g>
+        <circle cx="311.200" cy="200.000" r="32.800" fill="#1a1a1a"/>
+        <path d="M 311.200 167.200 L 311.200 232.800 L 491.200 232.800 L 491.200 167.200 Z" fill="#1a1a1a"/>
+      </g>
+    
+      <g>
+        <circle cx="278.630" cy="278.630" r="32.800" fill="#1a1a1a"/>
+        <path d="M 301.823 255.437 L 255.437 301.823 L 382.716 429.103 L 429.103 382.716 Z" fill="#1a1a1a"/>
+      </g>
+    
+      <g>
+        <circle cx="200.000" cy="311.200" r="32.800" fill="#1a1a1a"/>
+        <path d="M 232.800 311.200 L 167.200 311.200 L 167.200 491.200 L 232.800 491.200 Z" fill="#1a1a1a"/>
+      </g>
+    
+      <g>
+        <circle cx="121.370" cy="278.630" r="32.800" fill="#1a1a1a"/>
+        <path d="M 144.563 301.823 L 98.177 255.437 L -29.103 382.716 L 17.284 429.103 Z" fill="#1a1a1a"/>
+      </g>
+    
+      <g>
+        <circle cx="88.800" cy="200.000" r="32.800" fill="#1a1a1a"/>
+        <path d="M 88.800 232.800 L 88.800 167.200 L -91.200 167.200 L -91.200 232.800 Z" fill="#1a1a1a"/>
+      </g>
+    
+      <g>
+        <circle cx="121.370" cy="121.370" r="32.800" fill="#1a1a1a"/>
+        <path d="M 98.177 144.563 L 144.563 98.177 L 17.284 -29.103 L -29.103 17.284 Z" fill="#1a1a1a"/>
+      </g>
+    
+  </g>
+
+  <!-- dimples (no border) -->
+  <g clip-path="url(#diskClip)">
+    <circle cx="200.000" cy="88.800" r="23.616" fill="#000000"/><circle cx="197.048" cy="85.848" r="5.314" fill="rgba(255,255,255,0.12)"/><circle cx="278.630" cy="121.370" r="23.616" fill="#000000"/><circle cx="275.678" cy="118.418" r="5.314" fill="rgba(255,255,255,0.12)"/><circle cx="311.200" cy="200.000" r="23.616" fill="#000000"/><circle cx="308.248" cy="197.048" r="5.314" fill="rgba(255,255,255,0.12)"/><circle cx="278.630" cy="278.630" r="23.616" fill="#000000"/><circle cx="275.678" cy="275.678" r="5.314" fill="rgba(255,255,255,0.12)"/><circle cx="200.000" cy="311.200" r="23.616" fill="#000000"/><circle cx="197.048" cy="308.248" r="5.314" fill="rgba(255,255,255,0.12)"/><circle cx="121.370" cy="278.630" r="23.616" fill="#000000"/><circle cx="118.418" cy="275.678" r="5.314" fill="rgba(255,255,255,0.12)"/><circle cx="88.800" cy="200.000" r="23.616" fill="#000000"/><circle cx="85.848" cy="197.048" r="5.314" fill="rgba(255,255,255,0.12)"/><circle cx="121.370" cy="121.370" r="23.616" fill="#000000"/><circle cx="118.418" cy="118.418" r="5.314" fill="rgba(255,255,255,0.12)"/>
+  </g>
+
+  <!-- ball -->
+  
+</svg>
