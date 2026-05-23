@@ -19,14 +19,17 @@ import {
 import { createGridLayout, getGridCellLayout } from "../layout/gridLayout";
 import { DispatcherView } from "../render/dispatcher/DispatcherView";
 import { preloadDispatcherAssets } from "../render/dispatcher/dispatcherAssets";
-import { PEARL_KEY, createPearlTexture, preloadPearlAssets } from "../render/pearl/pearlAssets";
+import {
+  createPearlTexture,
+  getPearlTextureKey,
+  preloadPearlAssets
+} from "../render/pearl/pearlAssets";
 import { SlideView } from "../render/slide/SlideView";
 import { preloadSlideAssets } from "../render/slide/slideAssets";
 import {
+  createAutomaticWheelConnectorSlides,
   getDispatcherConnectorLayout,
-  getDispatcherRightConnectorLayout,
-  getWheelConnectorLayout,
-  getWheelLeftConnectorLayout
+  getDispatcherRightConnectorLayout
 } from "../render/slide/slidePath";
 import { WheelView } from "../render/wheel/WheelView";
 import { preloadWheelAssets } from "../render/wheel/wheelAssets";
@@ -137,11 +140,23 @@ export class TestBoardScene extends Phaser.Scene {
         };
       },
       pressDispatcher: (dispatcherId?: string) => this.dispatchBall(dispatcherId),
-      requestRotateTurn: () => this.rotateWheel()
+      requestRotateTurn: () => this.rotateWheel(),
+      advanceTime: (deltaMs: number) => {
+        this.controller.advanceTime(deltaMs);
+        this.syncAuthoritativeVisuals();
+      }
     });
 
     this.scale.on("resize", this.handleResize, this);
     this.events.once("shutdown", uninstallDebug);
+  }
+
+  update(_: number, deltaMs: number): void {
+    const events = this.controller.advanceTime(deltaMs);
+
+    if (events.some((event) => event.type === "DISPATCHER_REFILLED")) {
+      this.syncAuthoritativeVisuals();
+    }
   }
 
   private handleResize(gameSize: Phaser.Structs.Size): void {
@@ -207,7 +222,8 @@ export class TestBoardScene extends Phaser.Scene {
       y: cellLayout.centerY,
       size: maxSize,
       direction,
-      hasBall: component.hasInitialBall,
+      hasBall: component.hasInitialBall ?? true,
+      ball: toInitialDispatcherBall(component),
       onPressed: () => this.dispatchBall(component.id)
     });
 
@@ -275,8 +291,7 @@ export class TestBoardScene extends Phaser.Scene {
     cell: LevelCell
   ): void {
     const cellLayout = getGridCellLayout(layout, cell);
-    this.createWheelConnectorSlide(layout, cell);
-    this.createWheelLeftConnectorSlide(layout, cell);
+    createAutomaticWheelConnectorSlides(this, layout, this.level, cell);
     const maxWheelSize = Math.min(cellLayout.width, cellLayout.height) * 0.94;
 
     this.wheelView = new WheelView(this, {
@@ -294,43 +309,13 @@ export class TestBoardScene extends Phaser.Scene {
     });
   }
 
-  private createWheelConnectorSlide(
-    layout: ReturnType<typeof createGridLayout>,
-    wheelCell: LevelCell
-  ): void {
-    const cellLayout = getWheelConnectorLayout(layout, wheelCell);
-
-    new SlideView(this, {
-      x: cellLayout.centerX,
-      y: cellLayout.centerY,
-      width: cellLayout.width,
-      height: cellLayout.height,
-      direction: "vertical"
-    });
-  }
-
-  private createWheelLeftConnectorSlide(
-    layout: ReturnType<typeof createGridLayout>,
-    wheelCell: LevelCell
-  ): void {
-    const cellLayout = getWheelLeftConnectorLayout(layout, wheelCell);
-
-    new SlideView(this, {
-      x: cellLayout.centerX,
-      y: cellLayout.centerY,
-      width: cellLayout.width,
-      height: cellLayout.height,
-      direction: "horizontal"
-    });
-  }
-
   private syncAuthoritativeVisuals(): void {
     const snapshot = this.controller.getSnapshot();
 
     this.wheelView?.setWheelSlots(snapshot.transitInProgress ? [] : snapshot.wheel.slots);
 
     for (const dispatcher of snapshot.dispatchers) {
-      this.dispatcherViews.get(dispatcher.id)?.setBallVisible(dispatcher.hasBall);
+      this.dispatcherViews.get(dispatcher.id)?.setBall(dispatcher.ball);
     }
   }
 
@@ -350,28 +335,30 @@ export class TestBoardScene extends Phaser.Scene {
     }
 
     const snapshot = this.controller.getSnapshot();
-    const landedEvent = snapshot.lastEvents.find((event) => event.type === "BALL_LANDED_IN_WHEEL");
-
-    if (!landedEvent) {
-      return;
-    }
 
     dispatcherView.setBallVisible(false);
     this.wheelView.setWheelSlots(
       snapshot.wheel.slots.map((occupantId, index) =>
-        index === landedEvent.localSlotIndex ? null : occupantId
+        index === instruction.targetLocalSlotIndex ? null : occupantId
       )
     );
 
     if (!this.transitBall) {
-      this.transitBall = this.add.image(dispatcherBallPosition.x, dispatcherBallPosition.y, PEARL_KEY);
+      this.transitBall = this.add.image(
+        dispatcherBallPosition.x,
+        dispatcherBallPosition.y,
+        getPearlTextureKey(instruction.ball.color)
+      );
     }
 
+    this.transitBall.setTexture(getPearlTextureKey(instruction.ball.color));
     this.transitBall.setScale(dispatcherView.getBallScale());
     this.transitBall.setPosition(dispatcherBallPosition.x, dispatcherBallPosition.y);
     this.transitBall.setVisible(true);
 
-    const wheelBallWorldPosition = this.getWheelBallWorldPosition(landedEvent.localSlotIndex);
+    const wheelBallWorldPosition = this.getWheelBallWorldPosition(
+      instruction.targetLocalSlotIndex
+    );
 
     if (!wheelBallWorldPosition) {
       return;
@@ -410,4 +397,24 @@ export class TestBoardScene extends Phaser.Scene {
 
     this.wheelView.animateTurn(_, () => this.controller.completeWheelAnimation());
   }
+}
+
+function toInitialDispatcherBall(
+  component: DispatcherDownLevelComponent | DispatcherRightLevelComponent
+): { id: string; color: "red" | "green" | "blue" } | null {
+  if (component.initialBall) {
+    return {
+      id: component.initialBall.id ?? `${component.id}:ball`,
+      color: component.initialBall.color
+    };
+  }
+
+  if (component.hasInitialBall === false) {
+    return null;
+  }
+
+  return {
+    id: `${component.id}:ball`,
+    color: "red"
+  };
 }

@@ -18,7 +18,12 @@ describe("DispatchBoardController", () => {
     expect(instruction).toEqual({
       dispatcherId: "dispatcher-a",
       slideId: "slide-a",
-      wheelId: "wheel-a"
+      wheelId: "wheel-a",
+      targetLocalSlotIndex: 0,
+      ball: {
+        id: "dispatcher-a:ball",
+        color: "red"
+      }
     });
     expect(snapshot.dispatcher.hasBall).toBe(false);
     expect(snapshot.wheel.hasBall).toBe(true);
@@ -104,7 +109,12 @@ describe("DispatchBoardController", () => {
     expect(dispatchInstruction).toEqual({
       dispatcherId: "dispatcher-a",
       slideId: "slide-a",
-      wheelId: "wheel-a"
+      wheelId: "wheel-a",
+      targetLocalSlotIndex: 7,
+      ball: {
+        id: "dispatcher-a:ball",
+        color: "red"
+      }
     });
     expect(snapshot.wheel.rotationStep).toBe(1);
     expect(snapshot.wheel.ballLocalSlotIndex).toBe(7);
@@ -147,7 +157,66 @@ describe("DispatchBoardController", () => {
       false,
       false
     ]);
-    expect(snapshot.wheel.slots[0]).toBe("dispatcher-top:ball");
-    expect(snapshot.wheel.slots[6]).toBe("dispatcher-left:ball");
+    expect(snapshot.wheel.slots[0]).toEqual({
+      id: "dispatcher-top:ball",
+      color: "red"
+    });
+    expect(snapshot.wheel.slots[6]).toEqual({
+      id: "dispatcher-left:ball",
+      color: "red"
+    });
+  });
+
+  it("returns colored dispatch instructions and advances deterministic refill time", () => {
+    const controller = new DispatchBoardController({
+      dispatcherId: "dispatcher-a",
+      slideId: "slide-a",
+      wheelId: "wheel-a",
+      wheelSlotCount: 8,
+      initialBall: {
+        id: "ball-red",
+        color: "red"
+      },
+      refillQueue: [
+        {
+          id: "ball-green",
+          color: "green",
+          delayMs: 2000
+        },
+        {
+          id: "ball-blue",
+          color: "blue",
+          delayMs: 2000
+        }
+      ]
+    });
+
+    expect(controller.getSnapshot().dispatcher.ball).toEqual({
+      id: "ball-red",
+      color: "red"
+    });
+    expect(controller.requestDispatch()).toMatchObject({
+      ball: {
+        id: "ball-red",
+        color: "red"
+      }
+    });
+    controller.completeDispatchAnimation();
+    controller.completeWheelAnimation();
+    controller.requestRotateWheel();
+    controller.completeWheelAnimation();
+
+    controller.advanceTime(2000);
+    expect(controller.getSnapshot().dispatcher.ball).toEqual({
+      id: "ball-green",
+      color: "green"
+    });
+
+    expect(controller.requestDispatch()).toMatchObject({
+      ball: {
+        id: "ball-green",
+        color: "green"
+      }
+    });
   });
 });

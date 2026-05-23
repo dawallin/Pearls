@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  advanceDispatchBoardTime,
   createDispatchBoardWorld,
   dispatchBall,
   getDispatchBoardSnapshot,
@@ -44,7 +45,8 @@ describe("dispatchBoardWorld", () => {
         wheelId: "wheel-a",
         steps: 1,
         rotationStep: 1,
-        tick: 1
+        tick: 1,
+        timeMs: 0
       }
     ]);
 
@@ -58,7 +60,8 @@ describe("dispatchBoardWorld", () => {
         wheelId: "wheel-a",
         steps: 1,
         rotationStep: 2,
-        tick: 3
+        tick: 3,
+        timeMs: 0
       }
     ]);
     expect(snapshot.wheel.rotationStep).toBe(2);
@@ -116,7 +119,100 @@ describe("dispatchBoardWorld", () => {
         hasBall: false
       }
     ]);
-    expect(snapshot.wheel.slots[0]).toBe("dispatcher-top:ball");
-    expect(snapshot.wheel.slots[6]).toBe("dispatcher-left:ball");
+    expect(snapshot.wheel.slots[0]).toEqual({
+      id: "dispatcher-top:ball",
+      color: "red"
+    });
+    expect(snapshot.wheel.slots[6]).toEqual({
+      id: "dispatcher-left:ball",
+      color: "red"
+    });
+  });
+
+  it("refills the dispatcher with queued colored balls using deterministic core time", () => {
+    const world = createDispatchBoardWorld({
+      dispatcherId: "dispatcher-a",
+      slideId: "slide-a",
+      wheelId: "wheel-a",
+      wheelSlotCount: 8,
+      initialBall: {
+        id: "ball-red",
+        color: "red"
+      },
+      refillQueue: [
+        {
+          id: "ball-green",
+          color: "green",
+          delayMs: 2000
+        },
+        {
+          id: "ball-blue",
+          color: "blue",
+          delayMs: 2000
+        }
+      ]
+    });
+
+    expect(getDispatchBoardSnapshot(world).dispatcher.ball).toEqual({
+      id: "ball-red",
+      color: "red"
+    });
+
+    dispatchBall(world);
+    expect(getDispatchBoardSnapshot(world).dispatcher.ball).toBeNull();
+
+    advanceDispatchBoardTime(world, 1999);
+    expect(getDispatchBoardSnapshot(world).dispatcher.ball).toBeNull();
+
+    expect(advanceDispatchBoardTime(world, 1)).toEqual([
+      {
+        type: "DISPATCHER_REFILLED",
+        dispatcherId: "dispatcher-a",
+        ballId: "ball-green",
+        color: "green",
+        tick: 2,
+        timeMs: 2000
+      }
+    ]);
+    expect(getDispatchBoardSnapshot(world).dispatcher.ball).toEqual({
+      id: "ball-green",
+      color: "green"
+    });
+
+    rotateWheelClockwise(world);
+    dispatchBall(world);
+    advanceDispatchBoardTime(world, 2000);
+    expect(getDispatchBoardSnapshot(world).dispatcher.ball).toEqual({
+      id: "ball-blue",
+      color: "blue"
+    });
+
+    rotateWheelClockwise(world);
+    dispatchBall(world);
+    advanceDispatchBoardTime(world, 4000);
+    expect(getDispatchBoardSnapshot(world).dispatcher.ball).toBeNull();
+  });
+
+  it("preserves ball identity and color in wheel slots as the wheel rotates", () => {
+    const world = createDispatchBoardWorld({
+      dispatcherId: "dispatcher-a",
+      slideId: "slide-a",
+      wheelId: "wheel-a",
+      wheelSlotCount: 8,
+      initialBall: {
+        id: "ball-green",
+        color: "green"
+      }
+    });
+
+    dispatchBall(world);
+    rotateWheelClockwise(world);
+    const snapshot = getDispatchBoardSnapshot(world);
+
+    expect(snapshot.wheel.ballLocalSlotIndex).toBe(0);
+    expect(snapshot.wheel.slots[0]).toEqual({
+      id: "ball-green",
+      color: "green"
+    });
   });
 });

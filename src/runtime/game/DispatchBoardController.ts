@@ -1,4 +1,5 @@
 import {
+  advanceDispatchBoardTime,
   createDispatchBoardWorld,
   dispatchBall,
   getDispatchBoardSnapshot,
@@ -13,17 +14,40 @@ export type DispatchBoardControllerConfig = Readonly<{
     id: string;
     slideId: string;
     hasInitialBall?: boolean;
+    initialBall?: {
+      id?: string;
+      color: "red" | "green" | "blue";
+    };
+    refillQueue?: readonly {
+      id?: string;
+      color: "red" | "green" | "blue";
+      delayMs: number;
+    }[];
     connectedWorldSlotIndex?: number;
   }[];
   wheelId: string;
   wheelSlotCount: number;
   dispatcherHasInitialBall?: boolean;
+  initialBall?: {
+    id?: string;
+    color: "red" | "green" | "blue";
+  };
+  refillQueue?: readonly {
+    id?: string;
+    color: "red" | "green" | "blue";
+    delayMs: number;
+  }[];
 }>;
 
 export type DispatchAnimationInstruction = Readonly<{
   dispatcherId: string;
   slideId: string;
   wheelId: string;
+  targetLocalSlotIndex: number;
+  ball: {
+    id: string;
+    color: "red" | "green" | "blue";
+  };
 }>;
 
 export type WheelAnimationInstruction = Readonly<{
@@ -38,11 +62,19 @@ export type DispatchBoardDebugSnapshot = Readonly<{
   dispatcher: Readonly<{
     id: string;
     hasBall: boolean;
+    ball: {
+      id: string;
+      color: "red" | "green" | "blue";
+    } | null;
   }>;
   dispatchers: readonly Readonly<{
     id: string;
     slideId: string;
     hasBall: boolean;
+    ball: {
+      id: string;
+      color: "red" | "green" | "blue";
+    } | null;
     connectedWorldSlotIndex: number;
   }>[];
   slide: Readonly<{
@@ -52,7 +84,8 @@ export type DispatchBoardDebugSnapshot = Readonly<{
     id: string;
     hasBall: boolean;
     ballLocalSlotIndex: number | null;
-    slots: readonly (string | null)[];
+    slots: readonly ({ id: string; color: "red" | "green" | "blue" } | null)[];
+    slotBallIds: readonly (string | null)[];
     rotationStep: number;
     targetAngle: number;
     pendingTurns: number;
@@ -96,8 +129,9 @@ export class DispatchBoardController {
     }
 
     const dispatchEvent = events.find((event) => event.type === "BALL_DISPATCHED");
+    const landedEvent = events.find((event) => event.type === "BALL_LANDED_IN_WHEEL");
 
-    if (!dispatchEvent) {
+    if (!dispatchEvent || !landedEvent) {
       return null;
     }
 
@@ -105,12 +139,21 @@ export class DispatchBoardController {
     return {
       dispatcherId: dispatchEvent.dispatcherId,
       slideId: dispatchEvent.slideId,
-      wheelId: this.world.wheel.id
+      wheelId: this.world.wheel.id,
+      targetLocalSlotIndex: landedEvent.localSlotIndex,
+      ball: {
+        id: dispatchEvent.ballId,
+        color: dispatchEvent.color
+      }
     };
   }
 
   completeDispatchAnimation(): void {
     this.isTransitAnimating = false;
+  }
+
+  advanceTime(deltaMs: number): readonly DispatchBoardEvent[] {
+    return advanceDispatchBoardTime(this.world, deltaMs);
   }
 
   requestRotateWheel(): WheelAnimationInstruction | null {
@@ -140,6 +183,7 @@ export class DispatchBoardController {
         hasBall: snapshot.wheel.ballLocalSlotIndex !== null,
         ballLocalSlotIndex: snapshot.wheel.ballLocalSlotIndex,
         slots: snapshot.wheel.slots,
+        slotBallIds: snapshot.wheel.slotBallIds,
         rotationStep: snapshot.wheel.rotationStep,
         targetAngle: this.targetAngle,
         pendingTurns: this.pendingTurns,

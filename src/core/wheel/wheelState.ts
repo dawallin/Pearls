@@ -1,5 +1,7 @@
+import type { BallId } from "../ball/ballState";
+
 export type WheelId = string;
-export type WheelOccupantId = string;
+export type WheelOccupantId = BallId;
 
 export type WheelConfig = Readonly<{
   id: WheelId;

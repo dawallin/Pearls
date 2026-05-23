@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <radialGradient id="body" cx="35%" cy="28%" r="68%">
+      <stop offset="0%" stop-color="#efffee"/>
+      <stop offset="14%" stop-color="#adf2aa"/>
+      <stop offset="48%" stop-color="#34b95d"/>
+      <stop offset="78%" stop-color="#137437"/>
+      <stop offset="100%" stop-color="#063319"/>
+    </radialGradient>
+    <radialGradient id="flare" cx="35%" cy="27%" r="32%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.96"/>
+      <stop offset="40%" stop-color="#ffffff" stop-opacity="0.52"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="rim" cx="54%" cy="62%" r="52%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="78%" stop-color="#021f0d" stop-opacity="0.06"/>
+      <stop offset="100%" stop-color="#021f0d" stop-opacity="0.42"/>
+    </radialGradient>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="9" flood-color="#020803" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+  <circle cx="128" cy="128" r="104" fill="url(#body)" filter="url(#softShadow)"/>
+  <circle cx="128" cy="128" r="104" fill="url(#rim)"/>
+  <ellipse cx="90" cy="74" rx="35" ry="25" fill="url(#flare)" transform="rotate(-24 90 74)"/>
+  <ellipse cx="72" cy="58" rx="10" ry="7" fill="#ffffff" opacity="0.74" transform="rotate(-24 72 58)"/>
+  <path d="M59 151c20 48 83 69 129 31" fill="none" stroke="#ffffff" stroke-opacity="0.14" stroke-width="9" stroke-linecap="round"/>
+</svg>

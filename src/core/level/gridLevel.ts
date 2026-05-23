@@ -1,3 +1,5 @@
+import type { BallSeed } from "../ball/ballState";
+
 export type GridCellCoordinate = Readonly<{
   column: number;
   row: number;
@@ -17,13 +19,17 @@ export type WheelLevelComponent = Readonly<{
 export type DispatcherDownLevelComponent = Readonly<{
   type: "dispatcherDown";
   id: string;
-  hasInitialBall: boolean;
+  hasInitialBall?: boolean;
+  initialBall?: BallSeed;
+  refillQueue?: readonly (BallSeed & Readonly<{ delayMs: number }>)[];
 }>;
 
 export type DispatcherRightLevelComponent = Readonly<{
   type: "dispatcherRight";
   id: string;
-  hasInitialBall: boolean;
+  hasInitialBall?: boolean;
+  initialBall?: BallSeed;
+  refillQueue?: readonly (BallSeed & Readonly<{ delayMs: number }>)[];
 }>;
 
 export type VerticalSlideLevelComponent = Readonly<{

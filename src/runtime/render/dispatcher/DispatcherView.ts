@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 
-import { PEARL_DIAMETER_FACTOR, PEARL_KEY } from "../pearl/pearlAssets";
+import type { BallState } from "../../../core/ball/ballState";
+import { PEARL_DIAMETER_FACTOR, getPearlTextureKey } from "../pearl/pearlAssets";
 import {
   getDispatcherAssetKeys,
   type DispatcherDirection
@@ -12,6 +13,7 @@ export type DispatcherViewConfig = Readonly<{
   size: number;
   direction?: DispatcherDirection;
   hasBall: boolean;
+  ball?: BallState | null;
   onPressed: () => void;
 }>;
 
@@ -28,9 +30,13 @@ export class DispatcherView {
     background.setScale(dispatcherScale);
     dispatcher.setScale(dispatcherScale);
 
-    this.ball = scene.add.image(config.x, config.y, PEARL_KEY);
+    this.ball = scene.add.image(
+      config.x,
+      config.y,
+      getPearlTextureKey(config.ball?.color ?? "red")
+    );
     this.ball.setScale(ballSize / this.ball.width);
-    this.ball.setVisible(config.hasBall);
+    this.setBall(config.ball ?? (config.hasBall ? { id: "legacy-ball", color: "red" } : null));
 
     background.setDepth(0);
     this.ball.setDepth(1);
@@ -42,6 +48,14 @@ export class DispatcherView {
 
   setBallVisible(visible: boolean): void {
     this.ball.setVisible(visible);
+  }
+
+  setBall(ball: BallState | null): void {
+    if (ball) {
+      this.ball.setTexture(getPearlTextureKey(ball.color));
+    }
+
+    this.ball.setVisible(ball !== null);
   }
 
   getBallScale(): number {
