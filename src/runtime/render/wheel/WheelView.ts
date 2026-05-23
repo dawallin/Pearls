@@ -1,8 +1,10 @@
 import Phaser from "phaser";
 
+import type { BallState } from "../../../core/ball/ballState";
 import type { WheelAnimationInstruction as BoardWheelAnimationInstruction } from "../../game/DispatchBoardController";
+import type { TransferWheelAnimationInstruction } from "../../game/WheelTransferController";
 import type { WheelAnimationInstruction as SingleWheelAnimationInstruction } from "../../game/WheelController";
-import { PEARL_DIAMETER_FACTOR, PEARL_KEY } from "../pearl/pearlAssets";
+import { PEARL_DIAMETER_FACTOR, getPearlTextureKey } from "../pearl/pearlAssets";
 import { WHEEL_KEY } from "./wheelAssets";
 import {
   slotIndexToLocalAngle,
@@ -11,9 +13,12 @@ import {
   WHEEL_TURN_EASE
 } from "./wheelVisualConfig";
 
+const WHEEL_CENTER_HIT_RADIUS_FACTOR = 0.28;
+
 export type WheelViewAnimationInstruction =
   | BoardWheelAnimationInstruction
-  | SingleWheelAnimationInstruction;
+  | SingleWheelAnimationInstruction
+  | TransferWheelAnimationInstruction;
 
 export type WheelViewConfig = Readonly<{
   x: number;
@@ -21,8 +26,10 @@ export type WheelViewConfig = Readonly<{
   size: number;
   slotCount: number;
   onPressed: () => void;
+  onBallPressed?: (localSlotIndex: number) => void;
   hasBall?: boolean;
   ballLocalSlotIndex?: number | null;
+  slots?: readonly (BallState | null)[];
 }>;
 
 export class WheelView {
@@ -31,14 +38,18 @@ export class WheelView {
   private readonly balls: Phaser.GameObjects.Image[];
   private readonly assembly: Phaser.GameObjects.Container;
   private readonly ballRadius: number;
-  private occupiedSlots: readonly boolean[];
+  private slots: readonly (BallState | null)[];
 
   constructor(scene: Phaser.Scene, config: WheelViewConfig) {
     this.scene = scene;
     this.slotCount = config.slotCount;
-    this.occupiedSlots = Array.from({ length: config.slotCount }, (_, index) =>
-      Boolean(config.hasBall ?? true) && index === (config.ballLocalSlotIndex ?? 0)
-    );
+    this.slots =
+      config.slots ??
+      Array.from({ length: config.slotCount }, (_, index) =>
+        Boolean(config.hasBall ?? true) && index === (config.ballLocalSlotIndex ?? 0)
+          ? { id: "legacy-ball", color: "red" }
+          : null
+      );
 
     const wheel = scene.add.image(0, 0, WHEEL_KEY);
     this.assembly = scene.add.container(config.x, config.y, [wheel]);
@@ -46,15 +57,27 @@ export class WheelView {
     const ballSize = wheel.width * PEARL_DIAMETER_FACTOR * wheelScale;
 
     wheel.setScale(wheelScale);
+    const centerHitRadius = wheel.width * WHEEL_CENTER_HIT_RADIUS_FACTOR;
+    wheel.setInteractive(
+      new Phaser.Geom.Circle(wheel.width / 2, wheel.height / 2, centerHitRadius),
+      Phaser.Geom.Circle.Contains
+    );
+    wheel.on("pointerdown", config.onPressed);
     this.balls = Array.from({ length: config.slotCount }, () => {
-      const ball = scene.add.image(0, 0, PEARL_KEY);
+      const ball = scene.add.image(0, 0, getPearlTextureKey("red"));
       ball.setScale(ballSize / ball.width);
+      ball.setInteractive({ useHandCursor: true });
+      ball.on("pointerdown", () => {
+        const localSlotIndex = this.balls.indexOf(ball);
+
+        if (localSlotIndex >= 0 && this.slots[localSlotIndex]) {
+          config.onBallPressed?.(localSlotIndex);
+        }
+      });
       scene.children.bringToTop(ball);
       return ball;
     });
     this.ballRadius = wheel.width * WHEEL_SLOT_CENTER_RADIUS_FACTOR * wheelScale;
-    wheel.setInteractive({ useHandCursor: true });
-    wheel.on("pointerdown", config.onPressed);
 
     this.syncBallPose();
   }
@@ -72,16 +95,16 @@ export class WheelView {
   }
 
   setBallState(state: { hasBall: boolean; localSlotIndex: number | null }): void {
-    this.occupiedSlots = Array.from({ length: this.slotCount }, (_, index) =>
+    this.slots = Array.from({ length: this.slotCount }, (_, index) =>
       state.hasBall && index === state.localSlotIndex
+        ? { id: "legacy-ball", color: "red" }
+        : null
     );
     this.syncBallPose();
   }
 
-  setWheelSlots(slots: readonly (string | null)[]): void {
-    this.occupiedSlots = Array.from({ length: this.slotCount }, (_, index) =>
-      Boolean(slots[index])
-    );
+  setWheelSlots(slots: readonly (BallState | null)[]): void {
+    this.slots = slots;
     this.syncBallPose();
   }
 
@@ -95,10 +118,14 @@ export class WheelView {
     return this.balls[0]?.scaleX ?? 1;
   }
 
+  getBallVisualRadius(): number {
+    return (this.balls[0]?.displayWidth ?? 0) / 2;
+  }
+
   getBallWorldPosition(localSlotIndex?: number | null): { x: number; y: number } | null {
     this.syncBallPose();
     const slotIndex =
-      localSlotIndex ?? this.occupiedSlots.findIndex((isOccupied) => isOccupied);
+      localSlotIndex ?? this.slots.findIndex((ball) => ball !== null);
 
     if (slotIndex === null || slotIndex < 0) {
       return null;
@@ -151,12 +178,17 @@ export class WheelView {
 
       const angle =
         slotIndexToLocalAngle(localSlotIndex, this.slotCount) + this.assembly.rotation;
+      const slotBall = this.slots[localSlotIndex];
+
+      if (slotBall) {
+        ball.setTexture(getPearlTextureKey(slotBall.color));
+      }
 
       ball.setPosition(
         this.assembly.x + Math.cos(angle) * this.ballRadius,
         this.assembly.y + Math.sin(angle) * this.ballRadius
       );
-      ball.setVisible(Boolean(this.occupiedSlots[localSlotIndex]));
+      ball.setVisible(slotBall !== null);
     }
   }
 }
