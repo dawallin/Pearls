@@ -39,6 +39,8 @@ export class WheelView {
   private readonly assembly: Phaser.GameObjects.Container;
   private readonly ballRadius: number;
   private slots: readonly (BallState | null)[];
+  private clearEffectActive = false;
+  private clearEffectTargetCount = 0;
 
   constructor(scene: Phaser.Scene, config: WheelViewConfig) {
     this.scene = scene;
@@ -108,6 +110,17 @@ export class WheelView {
     this.syncBallPose();
   }
 
+  getRenderedSlots(): readonly (BallState | null)[] {
+    return this.slots.map((ball) => (ball ? { ...ball } : null));
+  }
+
+  getClearEffectState(): Readonly<{ active: boolean; targetCount: number }> {
+    return {
+      active: this.clearEffectActive,
+      targetCount: this.clearEffectTargetCount
+    };
+  }
+
   setBallVisible(visible: boolean): void {
     for (const ball of this.balls) {
       ball.setVisible(visible && ball.visible);
@@ -164,6 +177,47 @@ export class WheelView {
         if (nextInstruction) {
           this.animateTurn(nextInstruction, onComplete);
         }
+      }
+    });
+  }
+
+  playClearEffect(
+    onComplete: () => void,
+    extraTargets: readonly Phaser.GameObjects.Image[] = []
+  ): void {
+    const affectedBalls = [
+      ...this.balls.filter(
+        (_ball, localSlotIndex) => this.slots[localSlotIndex] !== null
+      ),
+      ...extraTargets
+    ];
+
+    if (affectedBalls.length === 0) {
+      onComplete();
+      return;
+    }
+
+    this.clearEffectActive = true;
+    this.clearEffectTargetCount = affectedBalls.length;
+    for (const ball of affectedBalls) {
+      ball.setTint(0xffb347);
+      ball.setAlpha(1);
+    }
+
+    this.scene.tweens.add({
+      targets: affectedBalls,
+      alpha: 0.15,
+      duration: 120,
+      yoyo: true,
+      ease: "Sine.InOut",
+      onComplete: () => {
+        for (const ball of affectedBalls) {
+          ball.clearTint();
+          ball.setAlpha(1);
+        }
+        this.clearEffectActive = false;
+        this.clearEffectTargetCount = 0;
+        onComplete();
       }
     });
   }

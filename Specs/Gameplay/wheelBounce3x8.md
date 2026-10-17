@@ -45,6 +45,7 @@ After the bounce finishes, both balls remain in their original wheel slots.
 5. Both wheels start with a red ball in their slide-facing connected hole.
 6. A ball can leave a wheel only from that wheel's slide-facing connected hole.
 7. If the destination connected hole is occupied, the source ball bounces back.
+8. The bounce contact is derived from shared pearl geometry before the destination slot center, not a level-authored distance.
 8. A bounced ball remains in its original source wheel slot.
 9. Runtime animation must not decide whether a transfer or bounce occurred.
 

@@ -4,215 +4,167 @@ import {
   advanceDispatchBoardTime,
   createDispatchBoardWorld,
   dispatchBall,
+  ejectBallFromWheel,
   getDispatchBoardSnapshot,
-  rotateWheelClockwise
+  rotateWheelClockwise,
+  setDispatchConnection,
+  type DispatchBoardConfig,
+  type DispatchBoardEvent
 } from "../../src/core/board/dispatchBoardWorld";
+import { testDispatcherSlideWheel3x8Level } from "../../src/core/levels/test/testDispatcherSlideWheel3x8Level";
+import { setWheelWorldSlotOccupant } from "../../src/core/wheel/wheelState";
 
-describe("dispatchBoardWorld", () => {
-  it("dispatches the initial ball from the dispatcher into the wheel", () => {
-    const world = createDispatchBoardWorld({
-      dispatcherId: "dispatcher-a",
-      slideId: "slide-a",
-      wheelId: "wheel-a",
-      wheelSlotCount: 8,
-      dispatcherHasInitialBall: true
-    });
+const travelMs = 32;
+function createWorld(overrides: Omit<DispatchBoardConfig, "wheelId" | "wheelSlotCount"> = {}) {
+  return createDispatchBoardWorld({ dispatcherId: "dispatcher-a", slideId: "slide-a", wheelId: "wheel-a", wheelSlotCount: 8, transitTravelMs: travelMs, ...overrides });
+}
 
-    const events = dispatchBall(world);
-    const snapshot = getDispatchBoardSnapshot(world);
+describe("dispatchBoardWorld first-class transit", () => {
+  it("queues dispatch and resolves its level-derived endpoint only at the component boundary", () => {
+    const world = createWorld({ dispatcherHasInitialBall: true });
 
-    expect(events.map((event) => event.type)).toEqual([
-      "BALL_DISPATCHED",
-      "BALL_LANDED_IN_WHEEL"
-    ]);
-    expect(snapshot.dispatcher.hasBall).toBe(false);
-    expect(snapshot.wheel.ballLocalSlotIndex).toBe(0);
-    expect(snapshot.tick).toBe(1);
+    expect(dispatchBall(world)).toEqual({ dispatcherId: "dispatcher-a", slideId: "slide-a", ball: { id: "dispatcher-a:ball", color: "red" } });
+    expect(getDispatchBoardSnapshot(world)).toMatchObject({ tick: 0, activeTransits: [], dispatcher: { hasBall: true } });
+    expect(advanceDispatchBoardTime(world, 16)).toMatchObject([{ type: "BALL_DISPATCHED", ballId: "dispatcher-a:ball", tick: 1 }]);
+    expect(getDispatchBoardSnapshot(world).activeTransits).toMatchObject([{ currentComponentId: "slide-a", entryEdge: "north", direction: "forward", localProgress: 0.5 }]);
+
+    const events = advanceDispatchBoardTime(world, 16);
+    expect(events.map((event) => event.type)).toEqual(["TRANSIT_HANDOFF", "BALL_LANDED_IN_WHEEL"]);
+    expect(getDispatchBoardSnapshot(world).activeTransits).toEqual([]);
   });
 
-  it("rotates the wheel clockwise only after the ball has landed", () => {
-    const world = createDispatchBoardWorld({
-      dispatcherId: "dispatcher-a",
-      slideId: "slide-a",
-      wheelId: "wheel-a",
-      wheelSlotCount: 8,
-      dispatcherHasInitialBall: true
-    });
-
-    expect(rotateWheelClockwise(world)).toEqual([
-      {
-        type: "WHEEL_ROTATED",
-        wheelId: "wheel-a",
-        steps: 1,
-        rotationStep: 1,
-        tick: 1,
-        timeMs: 0
-      }
-    ]);
-
-    dispatchBall(world);
-    const events = rotateWheelClockwise(world);
-    const snapshot = getDispatchBoardSnapshot(world);
-
-    expect(events).toEqual([
-      {
-        type: "WHEEL_ROTATED",
-        wheelId: "wheel-a",
-        steps: 1,
-        rotationStep: 2,
-        tick: 3,
-        timeMs: 0
-      }
-    ]);
-    expect(snapshot.wheel.rotationStep).toBe(2);
-    expect(snapshot.wheel.ballLocalSlotIndex).toBe(7);
+  it("rejects a connection endpoint that was not declared as an allowed topology option", () => {
+    const world = createWorld();
+    expect(() => setDispatchConnection(world, "slide-a", "south", {
+      exitEdge: "south",
+      endpoint: { kind: "dispatcher", dispatcherId: "dispatcher-a", entryEdge: "north" }
+    })).toThrow("not a valid connection option");
   });
 
-  it("lands the ball in the currently upward-facing connected hole after pre-rotation", () => {
+  it("traverses both level-derived slide components and emits a handoff for each boundary", () => {
     const world = createDispatchBoardWorld({
-      dispatcherId: "dispatcher-a",
-      slideId: "slide-a",
-      wheelId: "wheel-a",
+      level: testDispatcherSlideWheel3x8Level,
+      dispatchers: [{ id: "dispatcher-01" }],
+      wheelId: "wheel-01",
       wheelSlotCount: 8,
-      dispatcherHasInitialBall: true
+      transitTravelMs: 64
     });
-
-    rotateWheelClockwise(world);
     dispatchBall(world);
-    const snapshot = getDispatchBoardSnapshot(world);
-
-    expect(snapshot.wheel.rotationStep).toBe(1);
-    expect(snapshot.wheel.ballLocalSlotIndex).toBe(7);
-  });
-
-  it("dispatches from multiple dispatchers into different connected wheel slots", () => {
-    const world = createDispatchBoardWorld({
-      dispatchers: [
-        {
-          id: "dispatcher-top",
-          slideId: "slide-top",
-          hasInitialBall: true,
-          connectedWorldSlotIndex: 0
-        },
-        {
-          id: "dispatcher-left",
-          slideId: "slide-left",
-          hasInitialBall: true,
-          connectedWorldSlotIndex: 6
-        }
-      ],
-      wheelId: "wheel-a",
-      wheelSlotCount: 8
-    });
-
-    dispatchBall(world, "dispatcher-top");
-    dispatchBall(world, "dispatcher-left");
-    const snapshot = getDispatchBoardSnapshot(world);
-
-    expect(snapshot.dispatchers).toMatchObject([
-      {
-        id: "dispatcher-top",
-        hasBall: false
-      },
-      {
-        id: "dispatcher-left",
-        hasBall: false
-      }
+    advanceDispatchBoardTime(world, 48);
+    expect(getDispatchBoardSnapshot(world).activeTransits).toMatchObject([{
+      currentComponentId: "slide-01-b",
+      entryEdge: "north",
+      direction: "forward",
+      segment: { componentId: "slide-01-b" }
+    }]);
+    const events = advanceDispatchBoardTime(world, 16);
+    expect(getDispatchBoardSnapshot(world).lastEvents.filter((event) => event.type === "TRANSIT_HANDOFF")).toMatchObject([
+      { componentId: "slide-01-a", endpoint: { kind: "component", componentId: "slide-01-b", entryEdge: "north" } },
+      { componentId: "slide-01-b", endpoint: { kind: "wheel", wheelId: "wheel-01", entryEdge: "north" } }
     ]);
-    expect(snapshot.wheel.slots[0]).toEqual({
-      id: "dispatcher-top:ball",
-      color: "red"
-    });
-    expect(snapshot.wheel.slots[6]).toEqual({
-      id: "dispatcher-left:ball",
-      color: "red"
-    });
+    expect(events.some((event) => event.type === "BALL_LANDED_IN_WHEEL")).toBe(true);
   });
 
-  it("refills the dispatcher with queued colored balls using deterministic core time", () => {
-    const world = createDispatchBoardWorld({
-      dispatcherId: "dispatcher-a",
-      slideId: "slide-a",
-      wheelId: "wheel-a",
-      wheelSlotCount: 8,
-      initialBall: {
-        id: "ball-red",
-        color: "red"
-      },
-      refillQueue: [
-        {
-          id: "ball-green",
-          color: "green",
-          delayMs: 2000
-        },
-        {
-          id: "ball-blue",
-          color: "blue",
-          delayMs: 2000
-        }
-      ]
-    });
-
-    expect(getDispatchBoardSnapshot(world).dispatcher.ball).toEqual({
-      id: "ball-red",
-      color: "red"
-    });
-
+  it("dispatches despite an occupied wheel, bounces, and burns at the origin after refill", () => {
+    const world = createWorld({ initialBall: { id: "first", color: "red" }, refillQueue: [{ id: "second", color: "blue", delayMs: 1 }, { id: "third", color: "green", delayMs: 1 }] });
     dispatchBall(world);
-    expect(getDispatchBoardSnapshot(world).dispatcher.ball).toBeNull();
-
-    advanceDispatchBoardTime(world, 1999);
-    expect(getDispatchBoardSnapshot(world).dispatcher.ball).toBeNull();
-
-    expect(advanceDispatchBoardTime(world, 1)).toEqual([
-      {
-        type: "DISPATCHER_REFILLED",
-        dispatcherId: "dispatcher-a",
-        ballId: "ball-green",
-        color: "green",
-        tick: 2,
-        timeMs: 2000
-      }
-    ]);
-    expect(getDispatchBoardSnapshot(world).dispatcher.ball).toEqual({
-      id: "ball-green",
-      color: "green"
-    });
-
-    rotateWheelClockwise(world);
+    advanceDispatchBoardTime(world, travelMs);
+    expect(getDispatchBoardSnapshot(world).dispatcher.ball).toEqual({ id: "second", color: "blue" });
     dispatchBall(world);
-    advanceDispatchBoardTime(world, 2000);
-    expect(getDispatchBoardSnapshot(world).dispatcher.ball).toEqual({
-      id: "ball-blue",
-      color: "blue"
-    });
-
-    rotateWheelClockwise(world);
-    dispatchBall(world);
-    advanceDispatchBoardTime(world, 4000);
-    expect(getDispatchBoardSnapshot(world).dispatcher.ball).toBeNull();
+    const events = advanceDispatchBoardTime(world, travelMs * 3);
+    expect(events.map((event) => event.type)).toContain("BALL_BOUNCED");
+    expect(events).toContainEqual(expect.objectContaining({ type: "BALL_BURNED_AT_DISPATCHER", ballId: "second", dispatcherId: "dispatcher-a", color: "blue" }));
+    expect(getDispatchBoardSnapshot(world).dispatcher.ball).toEqual({ id: "third", color: "green" });
   });
 
-  it("preserves ball identity and color in wheel slots as the wheel rotates", () => {
-    const world = createDispatchBoardWorld({
-      dispatcherId: "dispatcher-a",
-      slideId: "slide-a",
-      wheelId: "wheel-a",
-      wheelSlotCount: 8,
-      initialBall: {
-        id: "ball-green",
-        color: "green"
-      }
+  it("ejects an aligned wheel pearl into the adjacent slide without inspecting the dispatcher", () => {
+    const world = createWorld({
+      initialBall: { id: "first", color: "red" },
+      refillQueue: [{ id: "held-at-dispatcher", color: "blue", delayMs: 1 }]
     });
-
     dispatchBall(world);
-    rotateWheelClockwise(world);
-    const snapshot = getDispatchBoardSnapshot(world);
-
-    expect(snapshot.wheel.ballLocalSlotIndex).toBe(0);
-    expect(snapshot.wheel.slots[0]).toEqual({
-      id: "ball-green",
-      color: "green"
+    advanceDispatchBoardTime(world, travelMs);
+    expect(getDispatchBoardSnapshot(world)).toMatchObject({
+      dispatcher: { ball: { id: "held-at-dispatcher" } },
+      wheel: { slotBallIds: ["first", null, null, null, null, null, null, null] }
     });
+
+    expect(ejectBallFromWheel(world, 0)).toEqual({ wheelId: "wheel-a", ball: { id: "first", color: "red" } });
+    expect(getDispatchBoardSnapshot(world).wheel.slotBallIds[0]).toBe("first");
+    const events = advanceDispatchBoardTime(world, travelMs * 2);
+
+    expect(events[0]).toMatchObject({ type: "BALL_EJECTED_FROM_WHEEL", wheelId: "wheel-a", ballId: "first" });
+    expect(events).toContainEqual(expect.objectContaining({ type: "BALL_BURNED_AT_DISPATCHER", ballId: "first", dispatcherId: "dispatcher-a" }));
+    expect(getDispatchBoardSnapshot(world).dispatcher.ball).toEqual({ id: "held-at-dispatcher", color: "blue" });
+    expect(getDispatchBoardSnapshot(world).wheel.slotBallIds).toEqual(Array(8).fill(null));
+  });
+
+  it("advances multiple transits in stable ball-ID order", () => {
+    const world = createWorld({ dispatchers: [
+      { id: "dispatcher-z", slideId: "slide-z", initialBall: { id: "z-ball", color: "red" }, connectedWorldSlotIndex: 0 },
+      { id: "dispatcher-a", slideId: "slide-a", initialBall: { id: "a-ball", color: "blue" }, connectedWorldSlotIndex: 1 }
+    ] });
+    dispatchBall(world, "dispatcher-z");
+    dispatchBall(world, "dispatcher-a");
+    const events = advanceDispatchBoardTime(world, travelMs);
+    expect(events.filter((event) => event.type === "TRANSIT_HANDOFF").map((event) => event.ballId)).toEqual(["a-ball", "z-ball"]);
+    expect(getDispatchBoardSnapshot(world).wheel.slotBallIds.filter(Boolean)).toEqual(["z-ball", "a-ball"]);
+  });
+
+  it("evaluates harmony clearing only after the eighth real landing", () => {
+    const world = createWorld({ wheelClearRule: { type: "harmony" }, initialBall: { id: "ball-01", color: "red" }, refillQueue: Array.from({ length: 7 }, (_, index) => ({ id: `ball-${String(index + 2).padStart(2, "0")}`, color: "red" as const, delayMs: 1 })) });
+    let events: readonly DispatchBoardEvent[] = [];
+    for (let index = 0; index < 8; index += 1) {
+      dispatchBall(world);
+      events = advanceDispatchBoardTime(world, travelMs);
+      if (index < 7) {
+        rotateWheelClockwise(world);
+        advanceDispatchBoardTime(world, 16);
+      }
+    }
+    expect(events).toContainEqual(expect.objectContaining({ type: "WHEEL_CLEARED", clearCount: 1, color: "red" }));
+    expect(getDispatchBoardSnapshot(world).wheel.slots).toEqual(Array(8).fill(null));
+  });
+
+  it("applies queued wheel rotation at tick start and maps arrival using that tick's rotation", () => {
+    const world = createWorld({ dispatcherHasInitialBall: true });
+    dispatchBall(world);
+    expect(rotateWheelClockwise(world)).toMatchObject({ rotationStep: 1 });
+    expect(getDispatchBoardSnapshot(world)).toMatchObject({ tick: 0, wheel: { rotationStep: 0 } });
+    const firstTick = advanceDispatchBoardTime(world, 16);
+    expect(firstTick.map((event) => event.type)).toEqual(["BALL_DISPATCHED", "WHEEL_ROTATED"]);
+    advanceDispatchBoardTime(world, 16);
+    expect(getDispatchBoardSnapshot(world).wheel).toMatchObject({ rotationStep: 1, ballLocalSlotIndex: 7 });
+  });
+
+  it("preserves the complete ordered event stream regardless of frame partitioning", () => {
+    const config = { initialBall: { id: "first", color: "red" as const }, refillQueue: [{ id: "second", color: "blue" as const, delayMs: 16 }] };
+    const singleFrame = createWorld(config);
+    const partitioned = createWorld(config);
+    dispatchBall(singleFrame);
+    dispatchBall(partitioned);
+
+    const singleEvents = advanceDispatchBoardTime(singleFrame, 64);
+    const partitionedEvents: DispatchBoardEvent[] = [];
+    for (let elapsed = 0; elapsed < 64; elapsed += 1) partitionedEvents.push(...advanceDispatchBoardTime(partitioned, 1));
+
+    expect(singleEvents).toEqual(partitionedEvents);
+    expect(getDispatchBoardSnapshot(singleFrame)).toEqual(getDispatchBoardSnapshot(partitioned));
+    expect(singleEvents.map((event) => event.type)).toEqual(["BALL_DISPATCHED", "DISPATCHER_REFILLED", "TRANSIT_HANDOFF", "BALL_LANDED_IN_WHEEL"]);
+  });
+
+  it("does not rewind progress when wheel occupancy appears after contact was already passed", () => {
+    const world = createWorld({ transitTravelMs: 160, dispatcherHasInitialBall: true });
+    dispatchBall(world);
+    advanceDispatchBoardTime(world, 144);
+    const before = getDispatchBoardSnapshot(world).activeTransits[0].localProgress;
+    expect(before).toBeCloseTo(0.9, 8);
+    world.balls.blocker = { id: "blocker", color: "blue" };
+    setWheelWorldSlotOccupant(world.wheel, 0, "blocker");
+
+    const events = advanceDispatchBoardTime(world, 16);
+    const bounce = events.find((event) => event.type === "BALL_BOUNCED");
+    expect(bounce).toMatchObject({ type: "BALL_BOUNCED", localProgress: before });
+    expect(getDispatchBoardSnapshot(world).activeTransits[0].localProgress).toBeLessThan(before);
   });
 });

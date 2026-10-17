@@ -1,10 +1,11 @@
 import Phaser from "phaser";
 
 import type { BallColor } from "../../../core/ball/ballState";
+import { PEARL_DIAMETER_FACTOR } from "../../../core/geometry/physicalGeometry";
 
 export const PEARL_SOURCE_KEY = "pearl-source";
 export const PEARL_KEY = "pearl-red";
-export const PEARL_DIAMETER_FACTOR = 65.6 / 306;
+export { PEARL_DIAMETER_FACTOR };
 
 const PEARL_TEXTURE_KEYS: Readonly<Record<BallColor, string>> = {
   red: "pearl-red",

@@ -31,6 +31,7 @@ Read this for:
 - deterministic core vs runtime separation
 - simulation truth boundaries
 - core event and state principles
+- component-local transit, port-validated connection graphs, and source-side ejection
 
 ### `PlatformSpec.md`
 

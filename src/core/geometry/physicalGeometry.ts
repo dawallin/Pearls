@@ -1,0 +1,21 @@
+export const GRID_UNITS_PER_CELL = 1_000;
+export const WHEEL_COMPONENT_SPAN_CELLS = 3;
+/** The authored wheel occupies this fraction of its 3x3 grid footprint. */
+export const WHEEL_COMPONENT_RENDER_FIT_FACTOR = 0.94;
+
+/** Source dimensions from the 306px wheel asset used by wheelAssets.ts. */
+export const WHEEL_ASSET_SOURCE_DIAMETER_PX = 306;
+export const WHEEL_SLOT_CENTER_RADIUS_SOURCE_PX = 119;
+export const PEARL_ASSET_SOURCE_DIAMETER_PX = 65.6;
+
+/** Physical ratios shared by deterministic core geometry and runtime projection. */
+export const WHEEL_SLOT_CENTER_RADIUS_FACTOR = WHEEL_SLOT_CENTER_RADIUS_SOURCE_PX / WHEEL_ASSET_SOURCE_DIAMETER_PX;
+export const PEARL_DIAMETER_FACTOR = PEARL_ASSET_SOURCE_DIAMETER_PX / WHEEL_ASSET_SOURCE_DIAMETER_PX;
+export const WHEEL_FOOTPRINT_GRID_UNITS = WHEEL_COMPONENT_SPAN_CELLS * WHEEL_COMPONENT_RENDER_FIT_FACTOR * GRID_UNITS_PER_CELL;
+export const WHEEL_SLOT_CENTER_RADIUS_GRID_UNITS = WHEEL_SLOT_CENTER_RADIUS_FACTOR * WHEEL_FOOTPRINT_GRID_UNITS;
+
+export const PEARL_DIAMETER_GRID_UNITS = PEARL_DIAMETER_FACTOR * WHEEL_FOOTPRINT_GRID_UNITS;
+
+/** World-fixed 3x8 transfer route: two one-cell slides between 3x3 wheel slot centres. */
+export const REFERENCE_TWO_SLIDE_ROUTE_LENGTH_GRID_UNITS =
+  2 * ((WHEEL_COMPONENT_SPAN_CELLS / 2 + 1) * GRID_UNITS_PER_CELL - WHEEL_SLOT_CENTER_RADIUS_GRID_UNITS);

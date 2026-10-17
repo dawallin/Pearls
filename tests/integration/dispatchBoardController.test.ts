@@ -3,220 +3,50 @@ import { describe, expect, it } from "vitest";
 import { DispatchBoardController } from "../../src/runtime/game/DispatchBoardController";
 
 describe("DispatchBoardController", () => {
-  it("moves authoritative ball state into the wheel before dispatch animation completes", () => {
-    const controller = new DispatchBoardController({
-      dispatcherId: "dispatcher-a",
-      slideId: "slide-a",
-      wheelId: "wheel-a",
-      wheelSlotCount: 8,
-      dispatcherHasInitialBall: true
-    });
-
-    const instruction = controller.requestDispatch();
-    const snapshot = controller.getSnapshot();
-
-    expect(instruction).toEqual({
-      dispatcherId: "dispatcher-a",
-      slideId: "slide-a",
-      wheelId: "wheel-a",
-      targetLocalSlotIndex: 0,
-      ball: {
-        id: "dispatcher-a:ball",
-        color: "red"
-      }
-    });
-    expect(snapshot.dispatcher.hasBall).toBe(false);
-    expect(snapshot.wheel.hasBall).toBe(true);
-    expect(snapshot.transitInProgress).toBe(true);
-    expect(snapshot.lastEvents.map((event) => event.type)).toEqual([
-      "BALL_DISPATCHED",
-      "BALL_LANDED_IN_WHEEL"
-    ]);
+  it("projects core-owned active transits without treating animation completion as truth", () => {
+    const controller = new DispatchBoardController({ dispatcherId: "dispatcher-a", slideId: "slide-a", wheelId: "wheel-a", wheelSlotCount: 8, transitTravelMs: 32, dispatcherHasInitialBall: true });
+    expect(controller.requestDispatch()).toEqual({ dispatcherId: "dispatcher-a", slideId: "slide-a", ball: { id: "dispatcher-a:ball", color: "red" } });
+    controller.completeDispatchAnimation();
+    expect(controller.getSnapshot()).toMatchObject({ tick: 0, transitInProgress: true, activeTransits: [], wheel: { slots: Array(8).fill(null) } });
+    controller.advanceTime(16);
+    expect(controller.getSnapshot()).toMatchObject({ tick: 1, transitInProgress: true, activeTransits: [{ ball: { id: "dispatcher-a:ball" }, localProgress: 0.5 }] });
+    controller.advanceTime(16);
+    expect(controller.getSnapshot()).toMatchObject({ transitInProgress: false, activeTransits: [], wheel: { ballLocalSlotIndex: 0 } });
   });
 
-  it("blocks wheel rotation until dispatch animation completes, then rotates deterministically", () => {
-    const controller = new DispatchBoardController({
-      dispatcherId: "dispatcher-a",
-      slideId: "slide-a",
-      wheelId: "wheel-a",
-      wheelSlotCount: 8,
-      dispatcherHasInitialBall: true
-    });
+  it("allows a refilled dispatcher to launch another pearl while the first is in flight", () => {
+    const controller = new DispatchBoardController({ dispatcherId: "dispatcher-a", slideId: "slide-a", wheelId: "wheel-a", wheelSlotCount: 8, transitTravelMs: 100, initialBall: { id: "first", color: "red" }, refillQueue: [{ id: "second", color: "blue", delayMs: 1 }] });
+    controller.requestDispatch(); controller.advanceTime(32);
+    expect(controller.getSnapshot().dispatcher.ball).toEqual({ id: "second", color: "blue" });
+    expect(controller.requestDispatch()).toMatchObject({ ball: { id: "second", color: "blue" } });
+    controller.advanceTime(16);
+    expect(controller.getSnapshot().activeTransits.map((transit) => transit.ball.id)).toEqual(["first", "second"]);
+  });
 
+  it("keeps wheel rotation a presentation queue while the core decides arrival at its later tick", () => {
+    const controller = new DispatchBoardController({ dispatcherId: "dispatcher-a", slideId: "slide-a", wheelId: "wheel-a", wheelSlotCount: 8, transitTravelMs: 32, dispatcherHasInitialBall: true });
     controller.requestDispatch();
-    expect(controller.requestRotateWheel()).toBeNull();
-
-    controller.completeDispatchAnimation();
-    const turnInstruction = controller.requestRotateWheel();
-
-    expect(turnInstruction).toEqual({
-      wheelId: "wheel-a",
-      targetAngle: 45,
-      targetRotation: Math.PI / 4,
-      rotationStep: 1
-    });
-    expect(controller.getSnapshot().wheel.isAnimating).toBe(true);
+    expect(controller.requestRotateWheel()).toMatchObject({ rotationStep: 1 });
+    controller.completeWheelAnimation(); controller.advanceTime(32);
+    expect(controller.getSnapshot().wheel).toMatchObject({ rotationStep: 1, ballLocalSlotIndex: 7 });
   });
 
-  it("keeps visual rotation cumulative across a full wheel cycle", () => {
+  it("queues wheel pearl ejection independently of the downstream dispatcher state", () => {
     const controller = new DispatchBoardController({
       dispatcherId: "dispatcher-a",
       slideId: "slide-a",
       wheelId: "wheel-a",
       wheelSlotCount: 8,
-      dispatcherHasInitialBall: true
+      transitTravelMs: 32,
+      initialBall: { id: "first", color: "red" },
+      refillQueue: [{ id: "second", color: "blue", delayMs: 1 }]
     });
-
     controller.requestDispatch();
-    controller.completeDispatchAnimation();
+    controller.advanceTime(32);
 
-    for (let turn = 1; turn <= 8; turn += 1) {
-      const instruction = controller.requestRotateWheel();
-
-      expect(instruction).not.toBeNull();
-      expect(instruction?.targetAngle).toBe(turn * 45);
-      expect(instruction?.rotationStep).toBe(turn % 8);
-      controller.completeWheelAnimation();
-    }
-
-    const nextTurn = controller.requestRotateWheel();
-
-    expect(nextTurn).toMatchObject({
-      targetAngle: 405,
-      rotationStep: 1
-    });
-  });
-
-  it("allows rotating the empty wheel before dispatch and still dispatches afterward", () => {
-    const controller = new DispatchBoardController({
-      dispatcherId: "dispatcher-a",
-      slideId: "slide-a",
-      wheelId: "wheel-a",
-      wheelSlotCount: 8,
-      dispatcherHasInitialBall: true
-    });
-
-    const turnInstruction = controller.requestRotateWheel();
-
-    expect(turnInstruction).toMatchObject({
-      rotationStep: 1
-    });
-
-    controller.completeWheelAnimation();
-    const dispatchInstruction = controller.requestDispatch();
-    const snapshot = controller.getSnapshot();
-
-    expect(dispatchInstruction).toEqual({
-      dispatcherId: "dispatcher-a",
-      slideId: "slide-a",
-      wheelId: "wheel-a",
-      targetLocalSlotIndex: 7,
-      ball: {
-        id: "dispatcher-a:ball",
-        color: "red"
-      }
-    });
-    expect(snapshot.wheel.rotationStep).toBe(1);
-    expect(snapshot.wheel.ballLocalSlotIndex).toBe(7);
-    expect(snapshot.wheel.hasBall).toBe(true);
-  });
-
-  it("dispatches from two configured dispatchers into the same wheel", () => {
-    const controller = new DispatchBoardController({
-      dispatchers: [
-        {
-          id: "dispatcher-top",
-          slideId: "slide-top",
-          hasInitialBall: true,
-          connectedWorldSlotIndex: 0
-        },
-        {
-          id: "dispatcher-left",
-          slideId: "slide-left",
-          hasInitialBall: true,
-          connectedWorldSlotIndex: 6
-        }
-      ],
-      wheelId: "wheel-a",
-      wheelSlotCount: 8
-    });
-
-    expect(controller.requestDispatch("dispatcher-top")).toMatchObject({
-      dispatcherId: "dispatcher-top",
-      slideId: "slide-top"
-    });
-    controller.completeDispatchAnimation();
-    expect(controller.requestDispatch("dispatcher-left")).toMatchObject({
-      dispatcherId: "dispatcher-left",
-      slideId: "slide-left"
-    });
-
-    const snapshot = controller.getSnapshot();
-
-    expect(snapshot.dispatchers.map((dispatcher) => dispatcher.hasBall)).toEqual([
-      false,
-      false
-    ]);
-    expect(snapshot.wheel.slots[0]).toEqual({
-      id: "dispatcher-top:ball",
-      color: "red"
-    });
-    expect(snapshot.wheel.slots[6]).toEqual({
-      id: "dispatcher-left:ball",
-      color: "red"
-    });
-  });
-
-  it("returns colored dispatch instructions and advances deterministic refill time", () => {
-    const controller = new DispatchBoardController({
-      dispatcherId: "dispatcher-a",
-      slideId: "slide-a",
-      wheelId: "wheel-a",
-      wheelSlotCount: 8,
-      initialBall: {
-        id: "ball-red",
-        color: "red"
-      },
-      refillQueue: [
-        {
-          id: "ball-green",
-          color: "green",
-          delayMs: 2000
-        },
-        {
-          id: "ball-blue",
-          color: "blue",
-          delayMs: 2000
-        }
-      ]
-    });
-
-    expect(controller.getSnapshot().dispatcher.ball).toEqual({
-      id: "ball-red",
-      color: "red"
-    });
-    expect(controller.requestDispatch()).toMatchObject({
-      ball: {
-        id: "ball-red",
-        color: "red"
-      }
-    });
-    controller.completeDispatchAnimation();
-    controller.completeWheelAnimation();
-    controller.requestRotateWheel();
-    controller.completeWheelAnimation();
-
-    controller.advanceTime(2000);
-    expect(controller.getSnapshot().dispatcher.ball).toEqual({
-      id: "ball-green",
-      color: "green"
-    });
-
-    expect(controller.requestDispatch()).toMatchObject({
-      ball: {
-        id: "ball-green",
-        color: "green"
-      }
-    });
+    expect(controller.requestWheelEjection(0)).toEqual({ wheelId: "wheel-a", ball: { id: "first", color: "red" } });
+    expect(controller.getSnapshot()).toMatchObject({ wheel: { ballLocalSlotIndex: 0 }, dispatcher: { ball: { id: "second" } } });
+    controller.advanceTime(64);
+    expect(controller.getSnapshot()).toMatchObject({ wheel: { ballLocalSlotIndex: null }, dispatcher: { ball: { id: "second" } }, lastBurnEvent: { ballId: "first" } });
   });
 });

@@ -7,14 +7,16 @@ import {
   type WheelLevelComponent
 } from "../../core/level/gridLevel";
 import { testWheelTransfer3x8Level } from "../../core/levels/test/testWheelTransfer3x8Level";
+import { GRID_UNITS_PER_CELL, WHEEL_COMPONENT_RENDER_FIT_FACTOR } from "../../core/geometry/physicalGeometry";
+import {
+  WHEEL_TRANSFER_FIXED_TICK_MS
+} from "../../core/board/wheelTransferWorld";
 import { installPearlsDebug } from "../debug/installPearlsDebug";
 import {
   WheelTransferController,
-  type TransferAnimationInstruction,
   type TransferWheelAnimationInstruction
 } from "../game/WheelTransferController";
-import { createGridLayout, getGridCellLayout } from "../layout/gridLayout";
-import { getBounceContactPoint } from "./bounceGeometry";
+import { createGridLayout, getGridCellLayout, type GridLayout } from "../layout/gridLayout";
 import {
   createPearlTexture,
   getPearlTextureKey,
@@ -26,8 +28,8 @@ import { createAutomaticWheelConnectorSlides } from "../render/slide/slidePath";
 import { WheelView } from "../render/wheel/WheelView";
 import { preloadWheelAssets } from "../render/wheel/wheelAssets";
 
-const TRANSFER_DURATION_MS = 520;
-const BOUNCE_VISUAL_PENETRATION_FACTOR = 0.35;
+const MAX_FRAME_DELTA_MS = 250;
+const SPEED_OPTIONS = [0.25, 0.5, 1, 2] as const;
 
 type ComponentCenter = Readonly<{
   x: number;
@@ -40,7 +42,10 @@ type TestWheelTransferSceneConfig = Readonly<{
     topWheelId: string;
     bottomWheelId: string;
     wheelSlotCount: number;
+    topConnectedWorldSlotIndex?: number;
+    bottomConnectedWorldSlotIndex?: number;
     initialBallWheelIds?: readonly string[];
+    initialBalls?: readonly Readonly<{ wheelId: string; ball: { id: string; color: "red" | "green" | "blue" } }>[];
   };
 }>;
 
@@ -49,17 +54,29 @@ export class TestWheelTransferScene extends Phaser.Scene {
   private readonly controller: WheelTransferController;
   private readonly componentCenters = new Map<string, ComponentCenter>();
   private readonly wheelViews = new Map<string, WheelView>();
-  private transitBall?: Phaser.GameObjects.Image;
+  private readonly transitBalls = new Map<string, Phaser.GameObjects.Image>();
+  private readonly speedButtons = new Map<number, Phaser.GameObjects.Text>();
+  private gridLayout: GridLayout | null = null;
+  private simulationAccumulatorMs = 0;
+  private simulationSpeed = 1;
 
   constructor(config: TestWheelTransferSceneConfig = {}) {
     super("test-wheel-transfer");
 
     this.level = config.level ?? testWheelTransfer3x8Level;
     this.controller = new WheelTransferController(
-      config.controller ?? {
+      config.controller ? {
+        ...config.controller,
+        level: this.level,
+        topConnectedWorldSlotIndex: config.controller.topConnectedWorldSlotIndex ?? 4,
+        bottomConnectedWorldSlotIndex: config.controller.bottomConnectedWorldSlotIndex ?? 0
+      } : {
+        level: this.level,
         topWheelId: "wheel-top",
         bottomWheelId: "wheel-bottom",
-        wheelSlotCount: 8
+        wheelSlotCount: 8,
+        topConnectedWorldSlotIndex: 4,
+        bottomConnectedWorldSlotIndex: 0
       }
     );
   }
@@ -75,6 +92,7 @@ export class TestWheelTransferScene extends Phaser.Scene {
     const { width, height } = this.scale;
     createPearlTexture(this);
     const layout = createGridLayout(this.level, width, height);
+    this.gridLayout = layout;
 
     this.add
       .text(width / 2, 52, `${this.level.name} · ${this.level.columns}x${this.level.rows} Grid`, {
@@ -83,6 +101,8 @@ export class TestWheelTransferScene extends Phaser.Scene {
         fontSize: "28px"
       })
       .setOrigin(0.5);
+
+    this.createSpeedDial(width);
 
     this.add
       .text(width / 2, height - 42, "Click the ball to transfer. Click a wheel center to rotate.", {
@@ -128,6 +148,8 @@ export class TestWheelTransferScene extends Phaser.Scene {
             )
           },
           transitInProgress: snapshot.transitInProgress,
+          simulationSpeed: this.simulationSpeed,
+          activeTransits: snapshot.activeTransits,
           lastEvents: snapshot.lastEvents
         };
       },
@@ -136,11 +158,77 @@ export class TestWheelTransferScene extends Phaser.Scene {
         if (wheelId) {
           this.rotateWheel(wheelId);
         }
-      }
+      },
+      advanceTime: (ticks) => {
+        this.controller.advanceTime(ticks);
+        this.syncAuthoritativeVisuals();
+      },
+      setSimulationSpeed: (multiplier) => this.setSimulationSpeed(multiplier)
     });
 
     this.scale.on("resize", this.handleResize, this);
     this.events.once("shutdown", uninstallDebug);
+  }
+
+  update(_time: number, deltaMs: number): void {
+    this.simulationAccumulatorMs +=
+      Math.min(deltaMs, MAX_FRAME_DELTA_MS) * this.simulationSpeed;
+    const ticks = Math.floor(
+      this.simulationAccumulatorMs / WHEEL_TRANSFER_FIXED_TICK_MS
+    );
+
+    if (ticks === 0) {
+      return;
+    }
+
+    this.simulationAccumulatorMs -= ticks * WHEEL_TRANSFER_FIXED_TICK_MS;
+    this.controller.advanceTime(ticks);
+    this.syncAuthoritativeVisuals();
+  }
+
+  private createSpeedDial(width: number): void {
+    this.add
+      .text(width - 232, 24, "Speed", {
+        color: "#d6d0c1",
+        fontFamily: 'Georgia, "Times New Roman", serif',
+        fontSize: "16px"
+      })
+      .setOrigin(0, 0.5);
+
+    for (const [index, speed] of SPEED_OPTIONS.entries()) {
+      const button = this.add
+        .text(width - 156 + index * 42, 24, `${speed}×`, {
+          color: "#d6d0c1",
+          backgroundColor: "#142330",
+          fontFamily: 'Georgia, "Times New Roman", serif',
+          fontSize: "15px",
+          padding: { x: 8, y: 5 }
+        })
+        .setOrigin(0.5)
+        .setInteractive({ useHandCursor: true });
+      button.on("pointerdown", () => this.setSimulationSpeed(speed));
+      this.speedButtons.set(speed, button);
+    }
+
+    this.refreshSpeedDial();
+  }
+
+  private setSimulationSpeed(multiplier: number): void {
+    if (!SPEED_OPTIONS.includes(multiplier as (typeof SPEED_OPTIONS)[number])) {
+      throw new Error(`Unsupported simulation speed: ${multiplier}.`);
+    }
+
+    this.simulationSpeed = multiplier;
+    this.tweens.timeScale = multiplier;
+    this.refreshSpeedDial();
+  }
+
+  private refreshSpeedDial(): void {
+    for (const [speed, button] of this.speedButtons) {
+      const isSelected = speed === this.simulationSpeed;
+      button.setColor(isSelected ? "#0b1117" : "#d6d0c1");
+      button.setBackgroundColor(isSelected ? "#f3c969" : "#142330");
+    }
   }
 
   private handleResize(gameSize: Phaser.Structs.Size): void {
@@ -209,7 +297,7 @@ export class TestWheelTransferScene extends Phaser.Scene {
   ): void {
     const cellLayout = getGridCellLayout(layout, cell);
     createAutomaticWheelConnectorSlides(this, layout, this.level, cell);
-    const maxWheelSize = Math.min(cellLayout.width, cellLayout.height) * 0.94;
+    const maxWheelSize = Math.min(cellLayout.width, cellLayout.height) * WHEEL_COMPONENT_RENDER_FIT_FACTOR;
 
     const wheelView = new WheelView(this, {
       x: cellLayout.centerX,
@@ -233,10 +321,9 @@ export class TestWheelTransferScene extends Phaser.Scene {
     const snapshot = this.controller.getSnapshot();
 
     for (const [wheelId, wheel] of Object.entries(snapshot.wheels)) {
-      this.wheelViews.get(wheelId)?.setWheelSlots(
-        snapshot.transitInProgress ? [] : wheel.slots
-      );
+      this.wheelViews.get(wheelId)?.setWheelSlots(wheel.slots);
     }
+    this.syncTransitVisuals();
   }
 
   private transferBall(sourceWheelId: string): void {
@@ -246,92 +333,39 @@ export class TestWheelTransferScene extends Phaser.Scene {
       return;
     }
 
-    this.animateTransfer(instruction);
+    void instruction;
+    this.syncAuthoritativeVisuals();
   }
 
-  private animateTransfer(instruction: TransferAnimationInstruction): void {
-    const sourceWheelView = this.wheelViews.get(instruction.fromWheelId);
-    const targetWheelView = this.wheelViews.get(instruction.toWheelId);
-    const sourceBallPosition = sourceWheelView?.getBallWorldPosition(
-      instruction.sourceLocalSlotIndex
-    );
-    const targetBallPosition = targetWheelView?.getBallWorldPosition(
-      instruction.targetLocalSlotIndex
-    );
-
-    if (!sourceWheelView || !targetWheelView || !sourceBallPosition || !targetBallPosition) {
-      this.controller.completeTransferAnimation();
-      this.syncAuthoritativeVisuals();
-      return;
-    }
-
+  private syncTransitVisuals(): void {
     const snapshot = this.controller.getSnapshot();
-
-    for (const [wheelId, wheel] of Object.entries(snapshot.wheels)) {
-      const visibleSlots =
-        instruction.type === "transfer"
-          ? wheel.slots.map((occupantId, index) =>
-              wheelId === instruction.toWheelId && index === instruction.targetLocalSlotIndex
-                ? null
-                : occupantId
-            )
-          : wheel.slots.map((occupantId, index) =>
-              wheelId === instruction.fromWheelId && index === instruction.sourceLocalSlotIndex
-                ? null
-                : occupantId
-            );
-
-      this.wheelViews.get(wheelId)?.setWheelSlots(visibleSlots);
+    const activeIds = new Set(snapshot.activeTransits.map((transit) => transit.ball.id));
+    for (const [ballId, image] of this.transitBalls) {
+      if (!activeIds.has(ballId)) image.destroy();
     }
-
-    if (!this.transitBall) {
-      this.transitBall = this.add.image(
-        sourceBallPosition.x,
-        sourceBallPosition.y,
-        getPearlTextureKey("red")
-      );
+    for (const ballId of this.transitBalls.keys()) {
+      if (!activeIds.has(ballId)) this.transitBalls.delete(ballId);
     }
-
-    this.transitBall.setTexture(getPearlTextureKey("red"));
-    this.transitBall.setScale(sourceWheelView.getBallScale());
-    this.transitBall.setPosition(sourceBallPosition.x, sourceBallPosition.y);
-    this.transitBall.setVisible(true);
-
-    const completeAnimation = () => {
-      this.transitBall?.setVisible(false);
-      this.controller.completeTransferAnimation();
-      this.syncAuthoritativeVisuals();
-    };
-
-    if (instruction.type === "bounce") {
-      const bounceContactPoint = getBounceContactPoint(
-        sourceBallPosition,
-        targetBallPosition,
-        sourceWheelView.getBallVisualRadius(),
-        targetWheelView.getBallVisualRadius(),
-        BOUNCE_VISUAL_PENETRATION_FACTOR
-      );
-
-      this.tweens.add({
-        targets: this.transitBall,
-        x: bounceContactPoint.x,
-        y: bounceContactPoint.y,
-        duration: TRANSFER_DURATION_MS,
-        ease: "Sine.InOut",
-        yoyo: true,
-        onComplete: completeAnimation
-      });
-      return;
+    for (const transit of snapshot.activeTransits) {
+      const segment = transit.segment;
+      const visualGeometry = this.projectStaticSegment(segment);
+      if (!segment || !visualGeometry) continue;
+      const progress = transit.localProgress / segment.length;
+      const image = this.transitBalls.get(transit.ball.id) ?? this.add.image(visualGeometry.entry.x, visualGeometry.entry.y, getPearlTextureKey(transit.ball.color));
+      image.setTexture(getPearlTextureKey(transit.ball.color));
+      image.setScale(this.wheelViews.get(snapshot.topWheelId)?.getBallScale() ?? 1);
+      image.setPosition(visualGeometry.entry.x + (visualGeometry.exit.x - visualGeometry.entry.x) * progress, visualGeometry.entry.y + (visualGeometry.exit.y - visualGeometry.entry.y) * progress);
+      this.transitBalls.set(transit.ball.id, image);
     }
+  }
 
-    this.tweens.add({
-      targets: this.transitBall,
-      x: targetBallPosition.x,
-      y: targetBallPosition.y,
-      duration: TRANSFER_DURATION_MS,
-      ease: "Sine.InOut",
-      onComplete: completeAnimation
+  private projectStaticSegment(segment: ReturnType<WheelTransferController["getSnapshot"]>["components"][number]): { entry: ComponentCenter; exit: ComponentCenter } | null {
+    if (!this.gridLayout) return null;
+    const project = (point: { x: number; y: number }): ComponentCenter => ({
+      x: this.gridLayout!.originX + point.x / GRID_UNITS_PER_CELL * this.gridLayout!.cellWidth,
+      y: this.gridLayout!.originY + point.y / GRID_UNITS_PER_CELL * this.gridLayout!.cellHeight
     });
+    return { entry: project(segment.entry), exit: project(segment.exit) };
   }
 
   private rotateWheel(wheelId: string): void {

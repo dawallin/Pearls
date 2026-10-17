@@ -47,7 +47,7 @@ If the ball is not in the hole aligned with the slides, clicking the ball does n
 4. The bottom wheel occupies rows `5` through `7`.
 5. The top wheel starts with exactly one ball in the bottom-facing connected hole.
 6. The bottom wheel starts empty.
-7. A ball can leave a wheel only from that wheel's slide-facing connected hole.
+7. A ball can leave a wheel only from that wheel's slide-facing connected hole. This source-side check depends only on the adjacent slide port; it never checks or reserves the far endpoint.
 8. A ball can enter the other wheel only if that wheel's slide-facing connected hole is empty.
 9. Clicking the center of either wheel rotates only that wheel clockwise by one slot.
 10. The ball remains in the same local wheel slot when its wheel rotates.
@@ -75,6 +75,10 @@ The core must represent:
 - each wheel's rotation step
 - the connected world slot for each wheel
 - explicit events for transfer and rotation
+- a catalog of placed slide components and their physically compatible ports
+- active-component identity, entry/previous edge, direction, and component-local progress for each transit
+- boundary-time connection lookup; no future route or component index is authoritative transit state
+- tick-start commands for launch, connection changes, and wheel rotation
 
 The runtime animation must not decide whether the ball transferred or whether a wheel rotated.
 
