@@ -2,17 +2,25 @@ import {
   advanceDispatchBoardTime,
   createDispatchBoardWorld,
   dispatchBall,
+  ejectBallFromWheel,
   getDispatchBoardSnapshot,
   rotateWheelClockwise,
-  type DispatchBoardEvent
+  type DispatchBoardEvent,
+  type DispatchTransitSnapshot
 } from "../../core/board/dispatchBoardWorld";
+import type { WheelClearRule } from "../../core/wheel/wheelClearRule";
+import type { ComponentTransitSegment, DispatcherTransitSegment } from "../../core/board/componentTransitRoute";
+import type { ComponentConnectionOption } from "../../core/board/componentConnectionState";
+import type { GridLevelDefinition } from "../../core/level/gridLevel";
 
 export type DispatchBoardControllerConfig = Readonly<{
+  level?: GridLevelDefinition;
+  connectionOptions?: readonly ComponentConnectionOption[];
   dispatcherId?: string;
   slideId?: string;
   dispatchers?: readonly {
     id: string;
-    slideId: string;
+    slideId?: string;
     hasInitialBall?: boolean;
     initialBall?: {
       id?: string;
@@ -24,9 +32,14 @@ export type DispatchBoardControllerConfig = Readonly<{
       delayMs: number;
     }[];
     connectedWorldSlotIndex?: number;
+    entryEdge?: "north" | "east" | "south" | "west";
+    transitSegment?: DispatcherTransitSegment;
+    transitSegments?: readonly ComponentTransitSegment[];
   }[];
   wheelId: string;
   wheelSlotCount: number;
+  transitTravelMs?: number;
+  wheelClearRule?: WheelClearRule;
   dispatcherHasInitialBall?: boolean;
   initialBall?: {
     id?: string;
@@ -42,12 +55,12 @@ export type DispatchBoardControllerConfig = Readonly<{
 export type DispatchAnimationInstruction = Readonly<{
   dispatcherId: string;
   slideId: string;
-  wheelId: string;
-  targetLocalSlotIndex: number;
   ball: {
     id: string;
     color: "red" | "green" | "blue";
   };
+  /** Landing and clear are core events observed from snapshots, never animation results. */
+  clearEvent?: Extract<DispatchBoardEvent, { type: "WHEEL_CLEARED" }>;
 }>;
 
 export type WheelAnimationInstruction = Readonly<{
@@ -86,12 +99,19 @@ export type DispatchBoardDebugSnapshot = Readonly<{
     ballLocalSlotIndex: number | null;
     slots: readonly ({ id: string; color: "red" | "green" | "blue" } | null)[];
     slotBallIds: readonly (string | null)[];
+    clearRule: WheelClearRule | undefined;
+    clearCount: number;
+    lastClearEvent: Extract<DispatchBoardEvent, { type: "WHEEL_CLEARED" }> | null;
     rotationStep: number;
     targetAngle: number;
     pendingTurns: number;
     isAnimating: boolean;
   }>;
   transitInProgress: boolean;
+  activeTransits: readonly DispatchTransitSnapshot[];
+  lastHandoffEvent: Extract<DispatchBoardEvent, { type: "TRANSIT_HANDOFF" }> | null;
+  lastBounceEvent: Extract<DispatchBoardEvent, { type: "BALL_BOUNCED" }> | null;
+  lastBurnEvent: Extract<DispatchBoardEvent, { type: "BALL_BURNED_AT_DISPATCHER" }> | null;
   lastEvents: readonly DispatchBoardEvent[];
 }>;
 
@@ -108,7 +128,6 @@ export class DispatchBoardController {
   private readonly world;
   private pendingTurns = 0;
   private isWheelAnimating = false;
-  private isTransitAnimating = false;
   private targetAngle = 0;
   private visualAngle = 0;
 
@@ -118,38 +137,31 @@ export class DispatchBoardController {
   }
 
   requestDispatch(dispatcherId?: string): DispatchAnimationInstruction | null {
-    if (this.isTransitAnimating || this.isWheelAnimating) {
+    if (this.isWheelAnimating) {
       return null;
     }
 
-    const events = dispatchBall(this.world, dispatcherId);
-
-    if (events.length === 0) {
+    const request = dispatchBall(this.world, dispatcherId);
+    if (!request) {
       return null;
     }
 
-    const dispatchEvent = events.find((event) => event.type === "BALL_DISPATCHED");
-    const landedEvent = events.find((event) => event.type === "BALL_LANDED_IN_WHEEL");
-
-    if (!dispatchEvent || !landedEvent) {
-      return null;
-    }
-
-    this.isTransitAnimating = true;
     return {
-      dispatcherId: dispatchEvent.dispatcherId,
-      slideId: dispatchEvent.slideId,
-      wheelId: this.world.wheel.id,
-      targetLocalSlotIndex: landedEvent.localSlotIndex,
+      dispatcherId: request.dispatcherId,
+      slideId: request.slideId,
       ball: {
-        id: dispatchEvent.ballId,
-        color: dispatchEvent.color
+        id: request.ball.id,
+        color: request.ball.color
       }
     };
   }
 
+  requestWheelEjection(localSlotIndex: number): Readonly<{ wheelId: string; ball: { id: string; color: "red" | "green" | "blue" } }> | null {
+    return ejectBallFromWheel(this.world, localSlotIndex);
+  }
+
   completeDispatchAnimation(): void {
-    this.isTransitAnimating = false;
+    // Presentation completion is intentionally not authoritative.
   }
 
   advanceTime(deltaMs: number): readonly DispatchBoardEvent[] {
@@ -157,10 +169,6 @@ export class DispatchBoardController {
   }
 
   requestRotateWheel(): WheelAnimationInstruction | null {
-    if (this.isTransitAnimating) {
-      return null;
-    }
-
     this.pendingTurns += 1;
     return this.startNextTurn();
   }
@@ -184,12 +192,19 @@ export class DispatchBoardController {
         ballLocalSlotIndex: snapshot.wheel.ballLocalSlotIndex,
         slots: snapshot.wheel.slots,
         slotBallIds: snapshot.wheel.slotBallIds,
+        clearRule: snapshot.wheel.clearRule,
+        clearCount: snapshot.wheel.clearCount,
+        lastClearEvent: snapshot.wheel.lastClearEvent,
         rotationStep: snapshot.wheel.rotationStep,
         targetAngle: this.targetAngle,
         pendingTurns: this.pendingTurns,
         isAnimating: this.isWheelAnimating
       },
-      transitInProgress: this.isTransitAnimating,
+      transitInProgress: snapshot.activeTransits.length > 0 || snapshot.pendingTransitCount > 0,
+      activeTransits: snapshot.activeTransits,
+      lastHandoffEvent: snapshot.lastHandoffEvent,
+      lastBounceEvent: snapshot.lastBounceEvent,
+      lastBurnEvent: snapshot.lastBurnEvent,
       lastEvents: snapshot.lastEvents
     };
   }
@@ -200,9 +215,9 @@ export class DispatchBoardController {
     }
 
     this.pendingTurns -= 1;
-    const events = rotateWheelClockwise(this.world, 1);
+    const request = rotateWheelClockwise(this.world, 1);
 
-    if (events.length === 0) {
+    if (!request) {
       this.pendingTurns = 0;
       return null;
     }
@@ -215,7 +230,7 @@ export class DispatchBoardController {
       wheelId: this.world.wheel.id,
       targetAngle: this.targetAngle,
       targetRotation: toRotation(this.targetAngle),
-      rotationStep: this.world.wheel.rotationStep
+      rotationStep: request.rotationStep
     };
   }
 }

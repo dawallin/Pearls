@@ -54,6 +54,8 @@ Component behavior belongs to component systems, not to level files.
 
 Level files place and configure components. They do not implement behavior.
 
+Transit routes and collision geometry are derived by core from component placement, spans, connection slots, and shared physical constants. Level files must not contain renderer-calibrated collision distances or visual correction values.
+
 ## Test Level Rule
 
 Every new component type must ship with at least one minimal test level.

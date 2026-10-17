@@ -3,6 +3,7 @@ export type PearlsDebugSurface<TSnapshot> = {
   pressDispatcher: (dispatcherId?: string) => void;
   requestRotateTurn: (wheelId?: string) => void;
   advanceTime?: (deltaMs: number) => void;
+  setSimulationSpeed?: (multiplier: number) => void;
 };
 
 declare global {

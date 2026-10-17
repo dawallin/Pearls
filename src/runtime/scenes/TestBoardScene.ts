@@ -10,6 +10,7 @@ import {
   type WheelLevelComponent
 } from "../../core/level/gridLevel";
 import { testDispatcherSlideWheel3x8Level } from "../../core/levels/test/testDispatcherSlideWheel3x8Level";
+import { GRID_UNITS_PER_CELL } from "../../core/geometry/physicalGeometry";
 import { installPearlsDebug } from "../debug/installPearlsDebug";
 import {
   DispatchBoardController,
@@ -34,8 +35,6 @@ import {
 import { WheelView } from "../render/wheel/WheelView";
 import { preloadWheelAssets } from "../render/wheel/wheelAssets";
 
-const DISPATCH_DURATION_MS = 520;
-
 type ComponentCenter = Readonly<{
   x: number;
   y: number;
@@ -53,21 +52,21 @@ export class TestBoardScene extends Phaser.Scene {
 
   private readonly componentCenters = new Map<string, ComponentCenter>();
   private readonly dispatcherViews = new Map<string, DispatcherView>();
-  private transitBall?: Phaser.GameObjects.Image;
+  private readonly transitBalls = new Map<string, Phaser.GameObjects.Image>();
+  private readonly clearingTransitBallIds = new Set<string>();
   private wheelView?: WheelView;
+  private gridLayout?: ReturnType<typeof createGridLayout>;
 
   constructor(config: TestBoardSceneConfig = {}) {
     super("test-board");
 
-    const controllerConfig = config.controller ?? {
-      dispatcherId: "dispatcher-01",
-      slideId: "slide-01-a",
-      wheelId: "wheel-01",
-      wheelSlotCount: 8,
-      dispatcherHasInitialBall: true
-    };
-
     this.level = config.level ?? testDispatcherSlideWheel3x8Level;
+    const controllerConfig = {
+      ...createControllerConfigFromLevel(this.level),
+      ...config.controller,
+      dispatchers:
+        config.controller?.dispatchers ?? createControllerConfigFromLevel(this.level).dispatchers
+    };
     this.controller = new DispatchBoardController(controllerConfig);
     this.controlledDispatcherId =
       controllerConfig.dispatcherId ?? controllerConfig.dispatchers?.[0]?.id ?? "dispatcher-01";
@@ -85,6 +84,7 @@ export class TestBoardScene extends Phaser.Scene {
     const { width, height } = this.scale;
     createPearlTexture(this);
     const layout = createGridLayout(this.level, width, height);
+    this.gridLayout = layout;
 
     this.add
       .text(width / 2, 52, `${this.level.name} · ${this.level.columns}x${this.level.rows} Grid`, {
@@ -132,10 +132,22 @@ export class TestBoardScene extends Phaser.Scene {
             },
             wheel: {
               ...snapshot.wheel,
-              center: this.componentCenters.get(snapshot.wheel.id)
+              center: this.componentCenters.get(snapshot.wheel.id),
+              ballCenter: this.wheelView?.getBallWorldPosition(snapshot.wheel.ballLocalSlotIndex) ?? null,
+              pearlDiameter: (this.wheelView?.getBallVisualRadius() ?? 0) * 2,
+              renderedSlots: this.wheelView?.getRenderedSlots() ?? [],
+              clearEffect: this.wheelView?.getClearEffectState() ?? {
+                active: false,
+                targetCount: 0
+              }
             }
           },
           transitInProgress: snapshot.transitInProgress,
+          activeTransits: snapshot.activeTransits,
+          transitVisuals: Object.fromEntries([...this.transitBalls].map(([ballId, image]) => [ballId, { diameter: image.displayWidth }])),
+          lastHandoffEvent: snapshot.lastHandoffEvent,
+          lastBounceEvent: snapshot.lastBounceEvent,
+          lastBurnEvent: snapshot.lastBurnEvent,
           lastEvents: snapshot.lastEvents
         };
       },
@@ -154,9 +166,9 @@ export class TestBoardScene extends Phaser.Scene {
   update(_: number, deltaMs: number): void {
     const events = this.controller.advanceTime(deltaMs);
 
-    if (events.some((event) => event.type === "DISPATCHER_REFILLED")) {
-      this.syncAuthoritativeVisuals();
-    }
+    const clearEvent = events.find((event) => event.type === "WHEEL_CLEARED");
+    if (clearEvent?.type === "WHEEL_CLEARED") this.playWheelClearEffect(clearEvent.consumedBallIds);
+    this.syncAuthoritativeVisuals();
   }
 
   private handleResize(gameSize: Phaser.Structs.Size): void {
@@ -301,7 +313,8 @@ export class TestBoardScene extends Phaser.Scene {
       slotCount: component.slotCount,
       hasBall: false,
       ballLocalSlotIndex: null,
-      onPressed: () => this.rotateWheel()
+      onPressed: () => this.rotateWheel(),
+      onBallPressed: (localSlotIndex) => this.ejectWheelBall(localSlotIndex)
     });
     this.componentCenters.set(component.id, {
       x: cellLayout.centerX,
@@ -312,11 +325,57 @@ export class TestBoardScene extends Phaser.Scene {
   private syncAuthoritativeVisuals(): void {
     const snapshot = this.controller.getSnapshot();
 
-    this.wheelView?.setWheelSlots(snapshot.transitInProgress ? [] : snapshot.wheel.slots);
+    if (!this.wheelView?.getClearEffectState().active) {
+      this.wheelView?.setWheelSlots(snapshot.wheel.slots);
+    }
 
     for (const dispatcher of snapshot.dispatchers) {
       this.dispatcherViews.get(dispatcher.id)?.setBall(dispatcher.ball);
     }
+
+    const activeIds = new Set([
+      ...snapshot.activeTransits.map((transit) => transit.ball.id),
+      ...this.clearingTransitBallIds
+    ]);
+    for (const [ballId, image] of this.transitBalls) {
+      if (!activeIds.has(ballId)) {
+        image.destroy();
+        this.transitBalls.delete(ballId);
+      }
+    }
+    for (const transit of snapshot.activeTransits) {
+      const position = this.toWorldPoint(transit.position);
+      if (!position) continue;
+      const image = this.transitBalls.get(transit.ball.id) ?? this.add.image(position.x, position.y, getPearlTextureKey(transit.ball.color));
+      image.setTexture(getPearlTextureKey(transit.ball.color));
+      image.setScale(this.wheelView?.getBallScale() ?? 1);
+      image.setPosition(position.x, position.y);
+      image.setVisible(true);
+      this.transitBalls.set(transit.ball.id, image);
+    }
+  }
+
+  private playWheelClearEffect(consumedBallIds: readonly string[]): void {
+    if (!this.wheelView) return;
+    const transitTargets = consumedBallIds
+      .map((ballId) => this.transitBalls.get(ballId))
+      .filter((image): image is Phaser.GameObjects.Image => Boolean(image));
+    for (const ballId of consumedBallIds) {
+      if (this.transitBalls.has(ballId)) this.clearingTransitBallIds.add(ballId);
+    }
+    this.wheelView.playClearEffect(() => {
+      for (const ballId of this.clearingTransitBallIds) {
+        this.transitBalls.get(ballId)?.destroy();
+        this.transitBalls.delete(ballId);
+      }
+      this.clearingTransitBallIds.clear();
+      this.syncAuthoritativeVisuals();
+    }, transitTargets);
+  }
+
+  private toWorldPoint(point: Readonly<{ x: number; y: number }>): ComponentCenter | null {
+    if (!this.gridLayout) return null;
+    return { x: this.gridLayout.originX + point.x / GRID_UNITS_PER_CELL * this.gridLayout.cellWidth, y: this.gridLayout.originY + point.y / GRID_UNITS_PER_CELL * this.gridLayout.cellHeight };
   }
 
   private dispatchBall(dispatcherId = this.controlledDispatcherId): void {
@@ -326,60 +385,12 @@ export class TestBoardScene extends Phaser.Scene {
       return;
     }
 
-    const wheelCenter = this.componentCenters.get(instruction.wheelId);
-    const dispatcherView = this.dispatcherViews.get(instruction.dispatcherId);
-    const dispatcherBallPosition = dispatcherView?.getBallWorldPosition();
-
-    if (!dispatcherBallPosition || !wheelCenter || !this.wheelView || !dispatcherView) {
-      return;
-    }
-
-    const snapshot = this.controller.getSnapshot();
-
-    dispatcherView.setBallVisible(false);
-    this.wheelView.setWheelSlots(
-      snapshot.wheel.slots.map((occupantId, index) =>
-        index === instruction.targetLocalSlotIndex ? null : occupantId
-      )
-    );
-
-    if (!this.transitBall) {
-      this.transitBall = this.add.image(
-        dispatcherBallPosition.x,
-        dispatcherBallPosition.y,
-        getPearlTextureKey(instruction.ball.color)
-      );
-    }
-
-    this.transitBall.setTexture(getPearlTextureKey(instruction.ball.color));
-    this.transitBall.setScale(dispatcherView.getBallScale());
-    this.transitBall.setPosition(dispatcherBallPosition.x, dispatcherBallPosition.y);
-    this.transitBall.setVisible(true);
-
-    const wheelBallWorldPosition = this.getWheelBallWorldPosition(
-      instruction.targetLocalSlotIndex
-    );
-
-    if (!wheelBallWorldPosition) {
-      return;
-    }
-
-    this.tweens.add({
-      targets: this.transitBall,
-      x: wheelBallWorldPosition.x,
-      y: wheelBallWorldPosition.y,
-      duration: DISPATCH_DURATION_MS,
-      ease: "Sine.InOut",
-      onComplete: () => {
-        this.transitBall?.setVisible(false);
-        this.controller.completeDispatchAnimation();
-        this.syncAuthoritativeVisuals();
-      }
-    });
+    this.syncAuthoritativeVisuals();
   }
 
-  private getWheelBallWorldPosition(localSlotIndex: number): ComponentCenter | null {
-    return this.wheelView?.getBallWorldPosition(localSlotIndex) ?? null;
+  private ejectWheelBall(localSlotIndex: number): void {
+    if (!this.controller.requestWheelEjection(localSlotIndex)) return;
+    this.syncAuthoritativeVisuals();
   }
 
   private rotateWheel(): void {
@@ -397,6 +408,37 @@ export class TestBoardScene extends Phaser.Scene {
 
     this.wheelView.animateTurn(_, () => this.controller.completeWheelAnimation());
   }
+}
+
+function createControllerConfigFromLevel(level: GridLevelDefinition): DispatchBoardControllerConfig {
+  const wheel = level.cells.find((cell) => cell.component.type === "wheel")?.component;
+
+  if (!wheel || wheel.type !== "wheel") {
+    throw new Error(`Level "${level.id}" requires a wheel component.`);
+  }
+
+  const dispatchers = level.cells
+    .map((cell) => cell.component)
+    .filter(
+      (component): component is DispatcherDownLevelComponent | DispatcherRightLevelComponent =>
+        component.type === "dispatcherDown" || component.type === "dispatcherRight"
+    )
+    .map((dispatcher) => {
+      return {
+        id: dispatcher.id,
+        hasInitialBall: dispatcher.hasInitialBall,
+        initialBall: dispatcher.initialBall,
+        refillQueue: dispatcher.refillQueue
+      };
+    });
+
+  return {
+    level,
+    dispatchers,
+    wheelId: wheel.id,
+    wheelSlotCount: wheel.slotCount,
+    wheelClearRule: wheel.clearRule
+  };
 }
 
 function toInitialDispatcherBall(

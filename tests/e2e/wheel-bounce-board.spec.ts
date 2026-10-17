@@ -39,17 +39,18 @@ test("bounces the top ball back from an occupied bottom wheel slot", async ({ pa
 
   const bouncedSnapshot = await getBounceSnapshot(page);
 
-  expect(bouncedSnapshot.lastEvents).toEqual([
-    {
+  expect(bouncedSnapshot.lastEvents).toContainEqual(
+    expect.objectContaining({
       type: "BALL_BOUNCED",
       ballId: "transfer-ball",
       fromWheelId: "wheel-top",
       toWheelId: "wheel-bottom",
       sourceLocalSlotIndex: 4,
-      targetLocalSlotIndex: 0,
-      tick: 1
-    }
-  ]);
+      targetLocalSlotIndex: 0
+    })
+  );
+  const bounceEvent = bouncedSnapshot.lastEvents.find((event) => event.type === "BALL_BOUNCED") as { localProgress?: number } | undefined;
+  expect(bounceEvent?.localProgress).toBeLessThan(1_334);
   expect(bouncedSnapshot.components.wheels["wheel-top"].slotBallIds[4]).toBe("transfer-ball");
   expect(bouncedSnapshot.components.wheels["wheel-bottom"].slotBallIds[0]).toBe("blocking-ball");
 
@@ -68,34 +69,52 @@ test("bounces the top ball back from an occupied bottom wheel slot", async ({ pa
     }
 
     const snapshot = pearls.getSnapshot() as BounceSnapshot;
-    return !snapshot.transitInProgress && snapshot.lastEvents[0]?.ballId === "blocking-ball";
+    return !snapshot.transitInProgress && snapshot.lastEvents.some(
+      (event) => event.type === "BALL_BOUNCED" && event.ballId === "blocking-ball"
+    );
   });
 
   const upwardBounceSnapshot = await getBounceSnapshot(page);
 
-  expect(upwardBounceSnapshot.lastEvents).toEqual([
-    {
+  expect(upwardBounceSnapshot.lastEvents).toContainEqual(
+    expect.objectContaining({
       type: "BALL_BOUNCED",
       ballId: "blocking-ball",
       fromWheelId: "wheel-bottom",
       toWheelId: "wheel-top",
       sourceLocalSlotIndex: 0,
-      targetLocalSlotIndex: 4,
-      tick: 2
-    }
-  ]);
+      targetLocalSlotIndex: 4
+    })
+  );
   expect(upwardBounceSnapshot.components.wheels["wheel-top"].slotBallIds[4]).toBe("transfer-ball");
   expect(upwardBounceSnapshot.components.wheels["wheel-bottom"].slotBallIds[0]).toBe("blocking-ball");
+
+  await page.evaluate(() => {
+    globalThis.__PEARLS__?.setSimulationSpeed?.(0.25);
+    globalThis.__PEARLS__?.requestRotateTurn?.("wheel-bottom");
+  });
+  await page.waitForFunction(() => {
+    const wheel = (globalThis.__PEARLS__?.getSnapshot() as BounceSnapshot | undefined)?.components.wheels["wheel-bottom"];
+    return wheel?.rotationStep === 1 && wheel.isAnimating === true && wheel.targetAngle === 45 && wheel.pendingTurns === 0;
+  });
+  await page.waitForFunction(() => {
+    const wheel = (globalThis.__PEARLS__?.getSnapshot() as BounceSnapshot | undefined)?.components.wheels["wheel-bottom"];
+    return wheel?.isAnimating === false;
+  });
 });
 
 type BounceSnapshot = {
   levelId: string;
   transitInProgress: boolean;
-  lastEvents: Array<Record<string, unknown>>;
+  lastEvents: Array<Record<string, any>>;
   components: {
     wheels: Record<string, {
       ballCenter: { x: number; y: number } | null;
       slotBallIds: readonly (string | null)[];
+      rotationStep: number;
+      targetAngle: number;
+      pendingTurns: number;
+      isAnimating: boolean;
     }>;
   };
 };

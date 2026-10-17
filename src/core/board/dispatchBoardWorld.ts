@@ -1,119 +1,103 @@
 import type { BallColor, BallId, BallSeed, BallState } from "../ball/ballState";
+import { PEARL_DIAMETER_GRID_UNITS, REFERENCE_TWO_SLIDE_ROUTE_LENGTH_GRID_UNITS } from "../geometry/physicalGeometry";
+import type { GridLevelDefinition } from "../level/gridLevel";
+import { createWheelState, getWheelSlotsSnapshot, getWheelWorldSlotOccupant, mod, rotateWheelState, setWheelWorldSlotOccupant, type MutableWheelState } from "../wheel/wheelState";
+import { evaluateWheelClearRule, type WheelClearRule } from "../wheel/wheelClearRule";
 import {
-  createWheelState,
-  getWheelSlotsSnapshot,
-  getWheelWorldSlotOccupant,
-  mod,
-  rotateWheelState,
-  setWheelWorldSlotOccupant,
-  type MutableWheelState
-} from "../wheel/wheelState";
+  createComponentConnectionState,
+  isComponentConnectionAllowed,
+  resolveComponentConnection,
+  setComponentConnection,
+  type ComponentConnectionDefinition,
+  type ComponentConnectionEndpoint,
+  type ComponentConnectionOption,
+  type ComponentConnectionState,
+  type ComponentTerminalPort
+} from "./componentConnectionState";
+import type { ComponentTransitEdge, ComponentTransitState } from "./componentTransitState";
+import { buildDispatcherComponentTransitRoute, type ComponentTransitSegment, type CorePoint, type DispatcherTransitSegment } from "./componentTransitRoute";
+
+export const DISPATCH_TRANSIT_TRAVEL_MS = 520;
+export const DISPATCH_BOARD_FIXED_TICK_MS = 16;
+const DEBUG_EVENT_HISTORY_LIMIT = 64;
+
+export type DispatchConnectionEndpoint = ComponentConnectionEndpoint;
+export type DispatchConnection = Readonly<{ exitEdge: ComponentTransitEdge; endpoint: DispatchConnectionEndpoint }>;
+export type DispatchTransitSnapshot = Readonly<{
+  ball: BallState;
+  originDispatcherId: string | null;
+  sourceElement: Readonly<{ kind: "dispatcher"; dispatcherId: string }> | Readonly<{ kind: "wheel"; wheelId: string }>;
+  currentComponentId: string;
+  entryEdge: ComponentTransitEdge;
+  previousEdge: ComponentTransitEdge;
+  direction: "forward" | "back";
+  localProgress: number;
+  endpointIntent: DispatchConnection;
+  segment: ComponentTransitSegment;
+  position: CorePoint;
+}>;
 
 export type DispatchBoardEvent =
-  | Readonly<{
-      type: "BALL_DISPATCHED";
-      dispatcherId: string;
-      slideId: string;
-      ballId: BallId;
-      color: BallColor;
-      tick: number;
-      timeMs: number;
-    }>
-  | Readonly<{
-      type: "BALL_LANDED_IN_WHEEL";
-      slideId: string;
-      wheelId: string;
-      ballId: BallId;
-      color: BallColor;
-      localSlotIndex: number;
-      tick: number;
-      timeMs: number;
-    }>
-  | Readonly<{
-      type: "DISPATCHER_REFILLED";
-      dispatcherId: string;
-      ballId: BallId;
-      color: BallColor;
-      tick: number;
-      timeMs: number;
-    }>
-  | Readonly<{
-      type: "WHEEL_ROTATED";
-      wheelId: string;
-      steps: number;
-      rotationStep: number;
-      tick: number;
-      timeMs: number;
-    }>;
+  | Readonly<{ type: "BALL_DISPATCHED"; dispatcherId: string; slideId: string; ballId: BallId; color: BallColor; tick: number; timeMs: number }>
+  | Readonly<{ type: "BALL_EJECTED_FROM_WHEEL"; wheelId: string; slideId: string; ballId: BallId; color: BallColor; tick: number; timeMs: number }>
+  | Readonly<{ type: "TRANSIT_HANDOFF"; ballId: BallId; componentId: string; exitEdge: ComponentTransitEdge; endpoint: DispatchConnectionEndpoint; tick: number; timeMs: number }>
+  | Readonly<{ type: "BALL_LANDED_IN_WHEEL"; slideId: string; wheelId: string; ballId: BallId; color: BallColor; localSlotIndex: number; tick: number; timeMs: number }>
+  | Readonly<{ type: "BALL_BOUNCED"; ballId: BallId; color: BallColor; dispatcherId: string; wheelId: string; componentId: string; localProgress: number; tick: number; timeMs: number }>
+  | Readonly<{ type: "BALL_BURNED_AT_DISPATCHER"; ballId: BallId; color: BallColor; dispatcherId: string; tick: number; timeMs: number }>
+  | Readonly<{ type: "WHEEL_CLEARED"; wheelId: string; color: BallColor; consumedBallIds: readonly BallId[]; clearCount: number; tick: number; timeMs: number }>
+  | Readonly<{ type: "DISPATCHER_REFILLED"; dispatcherId: string; ballId: BallId; color: BallColor; tick: number; timeMs: number }>
+  | Readonly<{ type: "WHEEL_ROTATED"; wheelId: string; steps: number; rotationStep: number; tick: number; timeMs: number }>;
 
 export type DispatchBoardConfig = Readonly<{
+  level?: GridLevelDefinition;
   dispatcherId?: string;
   slideId?: string;
   dispatchers?: readonly DispatchBoardDispatcherConfig[];
   wheelId: string;
   wheelSlotCount: number;
+  wheelClearRule?: WheelClearRule;
   dispatcherHasInitialBall?: boolean;
   initialRotationStep?: number;
   connectedLocalSlotIndex?: number;
   initialBall?: BallSeed;
   refillQueue?: readonly DispatchBoardQueuedBallConfig[];
+  transitTravelMs?: number;
+  connectionOptions?: readonly ComponentConnectionOption[];
 }>;
-
-export type DispatchBoardQueuedBallConfig = BallSeed &
-  Readonly<{
-    delayMs: number;
-  }>;
-
+export type DispatchBoardQueuedBallConfig = BallSeed & Readonly<{ delayMs: number }>;
 export type DispatchBoardDispatcherConfig = Readonly<{
   id: string;
-  slideId: string;
+  slideId?: string;
   hasInitialBall?: boolean;
   initialBall?: BallSeed;
   refillQueue?: readonly DispatchBoardQueuedBallConfig[];
   connectedWorldSlotIndex?: number;
+  entryEdge?: ComponentTransitEdge;
+  transitSegment?: DispatcherTransitSegment;
+  transitSegments?: readonly ComponentTransitSegment[];
 }>;
-
 export type DispatchBoardBallSnapshot = BallState;
-
 export type DispatchBoardSnapshot = Readonly<{
   tick: number;
   timeMs: number;
   balls: Readonly<Record<BallId, BallState>>;
-  dispatcher: Readonly<{
-    id: string;
-    hasBall: boolean;
-    ball: DispatchBoardBallSnapshot | null;
-    refillReadyAtMs: number | null;
-    queuedBalls: readonly DispatchBoardBallSnapshot[];
-  }>;
-  dispatchers: readonly Readonly<{
-    id: string;
-    slideId: string;
-    hasBall: boolean;
-    ball: DispatchBoardBallSnapshot | null;
-    refillReadyAtMs: number | null;
-    queuedBalls: readonly DispatchBoardBallSnapshot[];
-    connectedWorldSlotIndex: number;
-  }>[];
-  slide: Readonly<{
-    id: string;
-  }>;
-  wheel: Readonly<{
-    id: string;
-    slotCount: number;
-    rotationStep: number;
-    ballLocalSlotIndex: number | null;
-    slots: readonly (DispatchBoardBallSnapshot | null)[];
-    slotBallIds: readonly (BallId | null)[];
-  }>;
+  dispatcher: DispatchBoardDispatcherSnapshot;
+  dispatchers: readonly DispatchBoardDispatcherSnapshot[];
+  slide: Readonly<{ id: string }>;
+  activeTransits: readonly DispatchTransitSnapshot[];
+  pendingTransitCount: number;
+  lastHandoffEvent: Extract<DispatchBoardEvent, { type: "TRANSIT_HANDOFF" }> | null;
+  lastBounceEvent: Extract<DispatchBoardEvent, { type: "BALL_BOUNCED" }> | null;
+  lastBurnEvent: Extract<DispatchBoardEvent, { type: "BALL_BURNED_AT_DISPATCHER" }> | null;
+  wheel: Readonly<{ id: string; slotCount: number; clearRule: WheelClearRule | undefined; clearCount: number; lastClearEvent: Extract<DispatchBoardEvent, { type: "WHEEL_CLEARED" }> | null; rotationStep: number; ballLocalSlotIndex: number | null; slots: readonly (DispatchBoardBallSnapshot | null)[]; slotBallIds: readonly (BallId | null)[] }>;
   lastEvents: readonly DispatchBoardEvent[];
 }>;
+export type DispatchBoardCommandResult = Readonly<{ dispatcherId: string; slideId: string; ball: BallState }>;
+export type WheelEjectionCommandResult = Readonly<{ wheelId: string; ball: BallState }>;
+export type DispatchBoardRotationResult = Readonly<{ wheelId: string; steps: number; rotationStep: number }>;
 
-type DispatchBoardQueuedBall = Readonly<{
-  ballId: BallId;
-  delayMs: number;
-}>;
-
+type DispatchBoardDispatcherSnapshot = Readonly<{ id: string; slideId: string; hasBall: boolean; ball: DispatchBoardBallSnapshot | null; refillReadyAtMs: number | null; queuedBalls: readonly DispatchBoardBallSnapshot[]; connectedWorldSlotIndex: number }>;
+type DispatchBoardQueuedBall = Readonly<{ ballId: BallId; delayMs: number }>;
 type DispatchBoardDispatcherState = {
   id: string;
   slideId: string;
@@ -121,7 +105,19 @@ type DispatchBoardDispatcherState = {
   refillReadyAtMs: number | null;
   queue: DispatchBoardQueuedBall[];
   connectedWorldSlotIndex: number;
+  segments: readonly ComponentTransitSegment[];
+  totalLength: number;
 };
+type ActiveDispatchTransit = ComponentTransitState & {
+  ballId: BallId;
+  routeDispatcherId: string;
+  sourceElement: Readonly<{ kind: "dispatcher"; dispatcherId: string }> | Readonly<{ kind: "wheel"; wheelId: string }>;
+};
+type DispatchBoardCommand =
+  | Readonly<{ type: "DISPATCH_BALL"; dispatcherId: string; ballId: BallId }>
+  | Readonly<{ type: "EJECT_WHEEL_BALL"; dispatcherId: string; ballId: BallId }>
+  | Readonly<{ type: "SET_CONNECTION"; componentId: string; exitEdge: ComponentTransitEdge; endpoint: DispatchConnectionEndpoint }>
+  | Readonly<{ type: "ROTATE_WHEEL"; steps: number }>;
 
 export type DispatchBoardWorld = {
   tick: number;
@@ -130,260 +126,205 @@ export type DispatchBoardWorld = {
   dispatchers: Map<string, DispatchBoardDispatcherState>;
   primaryDispatcherId: string;
   wheel: MutableWheelState;
+  wheelClearRule: WheelClearRule | undefined;
+  wheelClearCount: number;
+  lastClearEvent: Extract<DispatchBoardEvent, { type: "WHEEL_CLEARED" }> | null;
+  transitTravelMs: number;
+  accumulatedMs: number;
+  activeTransits: Map<BallId, ActiveDispatchTransit>;
+  connectionState: ComponentConnectionState;
+  pendingCommands: DispatchBoardCommand[];
+  pendingDispatchers: Set<string>;
+  pendingWheelBallId: BallId | null;
+  lastHandoffEvent: Extract<DispatchBoardEvent, { type: "TRANSIT_HANDOFF" }> | null;
+  lastBounceEvent: Extract<DispatchBoardEvent, { type: "BALL_BOUNCED" }> | null;
+  lastBurnEvent: Extract<DispatchBoardEvent, { type: "BALL_BURNED_AT_DISPATCHER" }> | null;
   lastEvents: DispatchBoardEvent[];
 };
 
-export function createDispatchBoardWorld(
-  config: DispatchBoardConfig
-): DispatchBoardWorld {
-  if (!Number.isInteger(config.wheelSlotCount) || config.wheelSlotCount <= 0) {
-    throw new Error("wheelSlotCount must be a positive integer.");
-  }
-
-  const dispatcherConfigs = config.dispatchers ?? [
-    {
-      id: config.dispatcherId ?? "dispatcher",
-      slideId: config.slideId ?? "slide",
-      hasInitialBall: config.dispatcherHasInitialBall ?? true,
-      initialBall: config.initialBall,
-      refillQueue: config.refillQueue,
-      connectedWorldSlotIndex: config.connectedLocalSlotIndex ?? 0
-    }
-  ];
-
-  if (dispatcherConfigs.length === 0) {
-    throw new Error("Dispatch board must have at least one dispatcher.");
-  }
+export function createDispatchBoardWorld(config: DispatchBoardConfig): DispatchBoardWorld {
+  if (!Number.isInteger(config.wheelSlotCount) || config.wheelSlotCount <= 0) throw new Error("wheelSlotCount must be a positive integer.");
+  const transitTravelMs = config.transitTravelMs ?? DISPATCH_TRANSIT_TRAVEL_MS;
+  if (!Number.isFinite(transitTravelMs) || transitTravelMs <= 0) throw new Error("transitTravelMs must be a positive finite number.");
+  const configs = config.dispatchers ?? [{
+    id: config.dispatcherId ?? "dispatcher",
+    slideId: config.slideId ?? "slide",
+    hasInitialBall: config.dispatcherHasInitialBall ?? true,
+    initialBall: config.initialBall,
+    refillQueue: config.refillQueue,
+    connectedWorldSlotIndex: config.connectedLocalSlotIndex ?? 0
+  }];
+  if (!configs.length) throw new Error("Dispatch board must have at least one dispatcher.");
 
   const balls: Record<BallId, BallState> = {};
   const dispatchers = new Map<string, DispatchBoardDispatcherState>();
+  const connectionDefaults: ComponentConnectionDefinition[] = [];
+  const componentIds = new Set<string>();
+  const allSegments: ComponentTransitSegment[] = [];
+  const terminalPorts: ComponentTerminalPort[] = [];
 
-  for (const dispatcherConfig of dispatcherConfigs) {
-    if (dispatchers.has(dispatcherConfig.id)) {
-      throw new Error(`Duplicate dispatcher "${dispatcherConfig.id}".`);
-    }
-
-    const heldBall = createInitialBall(dispatcherConfig);
-    const queue = (dispatcherConfig.refillQueue ?? []).map((queuedBall, index) => {
-      assertNonNegativeDelay(queuedBall.delayMs, dispatcherConfig.id);
-      const ball = createBallFromSeed(
-        queuedBall,
-        `${dispatcherConfig.id}:ball-${index + 2}`
-      );
+  for (const configItem of configs) {
+    if (dispatchers.has(configItem.id)) throw new Error(`Duplicate dispatcher "${configItem.id}".`);
+    const heldBall = createInitialBall(configItem);
+    const queue = (configItem.refillQueue ?? []).map((item, index) => {
+      assertNonNegativeDelay(item.delayMs, configItem.id);
+      const ball = createBallFromSeed(item, `${configItem.id}:ball-${index + 2}`);
       registerBall(balls, ball);
-
-      return {
-        ballId: ball.id,
-        delayMs: queuedBall.delayMs
-      };
+      return { ballId: ball.id, delayMs: item.delayMs };
     });
+    if (heldBall) registerBall(balls, heldBall);
 
-    if (heldBall) {
-      registerBall(balls, heldBall);
+    const segments = resolveDispatcherSegments(config, configItem);
+    for (const segment of segments) {
+      if (componentIds.has(segment.componentId)) throw new Error(`Transit component "${segment.componentId}" belongs to multiple dispatcher routes.`);
+      componentIds.add(segment.componentId);
+      allSegments.push(segment);
     }
-
-    dispatchers.set(dispatcherConfig.id, {
-      id: dispatcherConfig.id,
-      slideId: dispatcherConfig.slideId,
+    appendDispatcherConnections(connectionDefaults, configItem.id, config.wheelId, segments);
+    addTerminalPort(terminalPorts, {
+      kind: "dispatcher",
+      id: configItem.id,
+      edge: oppositeEdge(segments[0].entryEdge),
+      point: segments[0].entry
+    });
+    addTerminalPort(terminalPorts, {
+      kind: "wheel",
+      id: config.wheelId,
+      edge: oppositeEdge(segments.at(-1)!.exitEdge),
+      point: segments.at(-1)!.exit
+    });
+    dispatchers.set(configItem.id, {
+      id: configItem.id,
+      slideId: segments[0].componentId,
       heldBallId: heldBall?.id ?? null,
       refillReadyAtMs: null,
       queue,
-      connectedWorldSlotIndex: mod(
-        dispatcherConfig.connectedWorldSlotIndex ?? 0,
-        config.wheelSlotCount
-      )
+      connectedWorldSlotIndex: mod(configItem.connectedWorldSlotIndex ?? 0, config.wheelSlotCount),
+      segments,
+      totalLength: segments.reduce((sum, segment) => sum + segment.length, 0)
     });
   }
 
+  validateConnectionOptions(config.connectionOptions ?? [], componentIds, dispatchers, config.wheelId);
   return {
     tick: 0,
     timeMs: 0,
     balls,
     dispatchers,
-    primaryDispatcherId: dispatcherConfigs[0].id,
-    wheel: createWheelState({
-      id: config.wheelId,
-      slotCount: config.wheelSlotCount,
-      initialRotationStep: config.initialRotationStep
-    }),
+    primaryDispatcherId: configs[0].id,
+    wheel: createWheelState({ id: config.wheelId, slotCount: config.wheelSlotCount, initialRotationStep: config.initialRotationStep }),
+    wheelClearRule: config.wheelClearRule,
+    wheelClearCount: 0,
+    lastClearEvent: null,
+    transitTravelMs,
+    accumulatedMs: 0,
+    activeTransits: new Map(),
+    connectionState: createComponentConnectionState(connectionDefaults, config.connectionOptions, allSegments, terminalPorts),
+    pendingCommands: [],
+    pendingDispatchers: new Set(),
+    pendingWheelBallId: null,
+    lastHandoffEvent: null,
+    lastBounceEvent: null,
+    lastBurnEvent: null,
     lastEvents: []
   };
 }
 
-export function dispatchBall(
+/** Queues an allowed component exit change for the next fixed-tick boundary. */
+export function setDispatchConnection(
   world: DispatchBoardWorld,
-  dispatcherId = world.primaryDispatcherId
-): readonly DispatchBoardEvent[] {
+  componentId: string,
+  exitEdge: ComponentTransitEdge,
+  connection: DispatchConnection
+): void {
+  if (connection.exitEdge !== exitEdge) throw new Error(`Connection exit edge must match "${componentId}:${exitEdge}".`);
+  if (!isComponentConnectionAllowed(world.connectionState, componentId, exitEdge, connection.endpoint)) {
+    throw new Error(`Endpoint is not a valid connection option for "${componentId}:${exitEdge}".`);
+  }
+  world.pendingCommands.push({ type: "SET_CONNECTION", componentId, exitEdge, endpoint: { ...connection.endpoint } });
+}
+
+/** Queues dispatch for the next fixed tick without mutating authoritative state. */
+export function dispatchBall(world: DispatchBoardWorld, dispatcherId = world.primaryDispatcherId): DispatchBoardCommandResult | null {
   const dispatcher = world.dispatchers.get(dispatcherId);
-
-  if (!dispatcher?.heldBallId) {
-    world.lastEvents = [];
-    return world.lastEvents;
-  }
-
-  if (getWheelWorldSlotOccupant(world.wheel, dispatcher.connectedWorldSlotIndex) !== null) {
-    world.lastEvents = [];
-    return world.lastEvents;
-  }
-
-  const ball = world.balls[dispatcher.heldBallId];
-
-  if (!ball) {
-    throw new Error(`Unknown ball "${dispatcher.heldBallId}".`);
-  }
-
-  world.tick += 1;
-  dispatcher.heldBallId = null;
-  scheduleNextRefill(world, dispatcher);
-  const localSlotIndex = setWheelWorldSlotOccupant(
-    world.wheel,
-    dispatcher.connectedWorldSlotIndex,
-    ball.id
-  );
-
-  world.lastEvents = [
-    {
-      type: "BALL_DISPATCHED",
-      dispatcherId: dispatcher.id,
-      slideId: dispatcher.slideId,
-      ballId: ball.id,
-      color: ball.color,
-      tick: world.tick,
-      timeMs: world.timeMs
-    },
-    {
-      type: "BALL_LANDED_IN_WHEEL",
-      slideId: dispatcher.slideId,
-      wheelId: world.wheel.id,
-      ballId: ball.id,
-      color: ball.color,
-      localSlotIndex,
-      tick: world.tick,
-      timeMs: world.timeMs
-    }
-  ];
-
-  return world.lastEvents;
+  if (!dispatcher?.heldBallId || world.pendingDispatchers.has(dispatcherId)) return null;
+  const ball = requireBall(world, dispatcher.heldBallId);
+  world.pendingCommands.push({ type: "DISPATCH_BALL", dispatcherId, ballId: ball.id });
+  world.pendingDispatchers.add(dispatcherId);
+  return { dispatcherId, slideId: dispatcher.slideId, ball: { ...ball } };
 }
 
-export function advanceDispatchBoardTime(
-  world: DispatchBoardWorld,
-  deltaMs: number
-): readonly DispatchBoardEvent[] {
-  if (!Number.isFinite(deltaMs) || deltaMs < 0) {
-    throw new Error("deltaMs must be a non-negative finite number.");
-  }
+/** Queues an aligned wheel pearl into its adjacent slide without inspecting the far endpoint. */
+export function ejectBallFromWheel(world: DispatchBoardWorld, localSlotIndex: number): WheelEjectionCommandResult | null {
+  if (!Number.isInteger(localSlotIndex) || world.pendingWheelBallId !== null) return null;
+  const dispatcher = [...world.dispatchers.values()]
+    .sort((left, right) => left.id.localeCompare(right.id))
+    .find((candidate) => mod(candidate.connectedWorldSlotIndex - world.wheel.rotationStep, world.wheel.slotCount) === localSlotIndex);
+  if (!dispatcher) return null;
+  const ballId = getWheelWorldSlotOccupant(world.wheel, dispatcher.connectedWorldSlotIndex);
+  if (!ballId) return null;
+  const ball = requireBall(world, ballId);
+  world.pendingCommands.push({ type: "EJECT_WHEEL_BALL", dispatcherId: dispatcher.id, ballId });
+  world.pendingWheelBallId = ballId;
+  return { wheelId: world.wheel.id, ball: { ...ball } };
+}
 
-  if (deltaMs === 0) {
-    world.lastEvents = [];
-    return world.lastEvents;
-  }
-
-  world.timeMs += deltaMs;
-  const events: DispatchBoardEvent[] = [];
-
-  for (const dispatcher of world.dispatchers.values()) {
-    if (
-      dispatcher.heldBallId !== null ||
-      dispatcher.refillReadyAtMs === null ||
-      world.timeMs < dispatcher.refillReadyAtMs
-    ) {
-      continue;
-    }
-
-    const queuedBall = dispatcher.queue.shift();
-    dispatcher.refillReadyAtMs = null;
-
-    if (!queuedBall) {
-      continue;
-    }
-
-    dispatcher.heldBallId = queuedBall.ballId;
-    const ball = world.balls[queuedBall.ballId];
-
-    if (!ball) {
-      throw new Error(`Unknown queued ball "${queuedBall.ballId}".`);
-    }
-
+export function advanceDispatchBoardTime(world: DispatchBoardWorld, deltaMs: number): readonly DispatchBoardEvent[] {
+  if (!Number.isFinite(deltaMs) || deltaMs < 0) throw new Error("deltaMs must be a non-negative finite number.");
+  world.accumulatedMs += deltaMs;
+  const batch: DispatchBoardEvent[] = [];
+  while (world.accumulatedMs >= DISPATCH_BOARD_FIXED_TICK_MS) {
+    world.accumulatedMs -= DISPATCH_BOARD_FIXED_TICK_MS;
     world.tick += 1;
-    events.push({
-      type: "DISPATCHER_REFILLED",
-      dispatcherId: dispatcher.id,
-      ballId: ball.id,
-      color: ball.color,
-      tick: world.tick,
-      timeMs: world.timeMs
-    });
+    world.timeMs += DISPATCH_BOARD_FIXED_TICK_MS;
+    const tickEvents: DispatchBoardEvent[] = [];
+    applyCommandsAtTickStart(world, tickEvents);
+    resolveRefills(world, tickEvents);
+    const ordered = [...world.activeTransits.values()].sort((left, right) => left.ballId.localeCompare(right.ballId));
+    for (const transit of ordered) advanceTransit(world, transit, DISPATCH_BOARD_FIXED_TICK_MS, tickEvents);
+    batch.push(...tickEvents);
+    appendEventHistory(world, tickEvents);
   }
-
-  world.lastEvents = events;
-  return world.lastEvents;
+  return batch;
 }
 
-export function rotateWheelClockwise(
-  world: DispatchBoardWorld,
-  steps = 1
-): readonly DispatchBoardEvent[] {
-  world.tick += 1;
-  rotateWheelState(world.wheel, steps);
-  world.lastEvents = [
-    {
-      type: "WHEEL_ROTATED",
-      wheelId: world.wheel.id,
-      steps,
-      rotationStep: world.wheel.rotationStep,
-      tick: world.tick,
-      timeMs: world.timeMs
-    }
-  ];
-
-  return world.lastEvents;
+/** Queues rotation for the next fixed tick and returns the deterministic predicted step. */
+export function rotateWheelClockwise(world: DispatchBoardWorld, steps = 1): DispatchBoardRotationResult | null {
+  if (!Number.isInteger(steps) || steps === 0) return null;
+  const queuedSteps = world.pendingCommands.reduce((sum, command) => sum + (command.type === "ROTATE_WHEEL" ? command.steps : 0), 0);
+  world.pendingCommands.push({ type: "ROTATE_WHEEL", steps });
+  return { wheelId: world.wheel.id, steps, rotationStep: mod(world.wheel.rotationStep + queuedSteps + steps, world.wheel.slotCount) };
 }
 
-export function getDispatchBoardSnapshot(
-  world: DispatchBoardWorld
-): DispatchBoardSnapshot {
-  const dispatchers = [...world.dispatchers.values()].map((dispatcher) => ({
-    id: dispatcher.id,
-    slideId: dispatcher.slideId,
-    hasBall: dispatcher.heldBallId !== null,
-    ball: getBallSnapshot(world, dispatcher.heldBallId),
-    refillReadyAtMs: dispatcher.refillReadyAtMs,
-    queuedBalls: dispatcher.queue.map((queuedBall) =>
-      getRequiredBallSnapshot(world, queuedBall.ballId)
-    ),
-    connectedWorldSlotIndex: dispatcher.connectedWorldSlotIndex
-  }));
-  const primaryDispatcher =
-    world.dispatchers.get(world.primaryDispatcherId) ?? [...world.dispatchers.values()][0];
+export function getDispatchBoardSnapshot(world: DispatchBoardWorld): DispatchBoardSnapshot {
+  const dispatchers = [...world.dispatchers.values()].map((dispatcher) => dispatcherSnapshot(world, dispatcher));
+  const primary = world.dispatchers.get(world.primaryDispatcherId) ?? [...world.dispatchers.values()][0];
   const slotBallIds = getWheelSlotsSnapshot(world.wheel);
-  const slots = slotBallIds.map((ballId) => getBallSnapshot(world, ballId));
-  const firstOccupiedLocalSlotIndex = slotBallIds.findIndex(
-    (slotOccupantId) => slotOccupantId !== null
-  );
-
+  const slots = slotBallIds.map((id) => getBallSnapshot(world, id));
+  const first = slotBallIds.findIndex((id) => id !== null);
+  const activeTransits = [...world.activeTransits.values()]
+    .sort((left, right) => left.ballId.localeCompare(right.ballId))
+    .map((transit) => transitSnapshot(world, transit));
   return {
     tick: world.tick,
     timeMs: world.timeMs,
-    balls: { ...world.balls },
-    dispatcher: {
-      id: primaryDispatcher.id,
-      hasBall: primaryDispatcher.heldBallId !== null,
-      ball: getBallSnapshot(world, primaryDispatcher.heldBallId),
-      refillReadyAtMs: primaryDispatcher.refillReadyAtMs,
-      queuedBalls: primaryDispatcher.queue.map((queuedBall) =>
-        getRequiredBallSnapshot(world, queuedBall.ballId)
-      )
-    },
+    balls: Object.fromEntries(Object.entries(world.balls).map(([id, ball]) => [id, { ...ball }])),
+    dispatcher: dispatcherSnapshot(world, primary),
     dispatchers,
-    slide: {
-      id: primaryDispatcher.slideId
-    },
+    slide: { id: primary.slideId },
+    activeTransits,
+    pendingTransitCount: world.pendingDispatchers.size + (world.pendingWheelBallId === null ? 0 : 1),
+    lastHandoffEvent: world.lastHandoffEvent ? { ...world.lastHandoffEvent } : null,
+    lastBounceEvent: world.lastBounceEvent ? { ...world.lastBounceEvent } : null,
+    lastBurnEvent: world.lastBurnEvent ? { ...world.lastBurnEvent } : null,
     wheel: {
       id: world.wheel.id,
       slotCount: world.wheel.slotCount,
+      clearRule: world.wheelClearRule,
+      clearCount: world.wheelClearCount,
+      lastClearEvent: world.lastClearEvent ? { ...world.lastClearEvent } : null,
       rotationStep: world.wheel.rotationStep,
-      ballLocalSlotIndex: firstOccupiedLocalSlotIndex >= 0 ? firstOccupiedLocalSlotIndex : null,
+      ballLocalSlotIndex: first >= 0 ? first : null,
       slots,
       slotBallIds
     },
@@ -391,75 +332,322 @@ export function getDispatchBoardSnapshot(
   };
 }
 
-function createInitialBall(
-  dispatcherConfig: DispatchBoardDispatcherConfig
-): BallState | null {
-  if (dispatcherConfig.initialBall) {
-    return createBallFromSeed(
-      dispatcherConfig.initialBall,
-      `${dispatcherConfig.id}:ball`
-    );
+function applyCommandsAtTickStart(world: DispatchBoardWorld, events: DispatchBoardEvent[]): void {
+  const commands = world.pendingCommands.splice(0);
+  for (const command of commands) {
+    if (command.type === "SET_CONNECTION") {
+      setComponentConnection(world.connectionState, command.componentId, command.exitEdge, command.endpoint);
+      continue;
+    }
+    if (command.type === "ROTATE_WHEEL") {
+      rotateWheelState(world.wheel, command.steps);
+      events.push({ type: "WHEEL_ROTATED", wheelId: world.wheel.id, steps: command.steps, rotationStep: world.wheel.rotationStep, tick: world.tick, timeMs: world.timeMs });
+      continue;
+    }
+    if (command.type === "EJECT_WHEEL_BALL") {
+      world.pendingWheelBallId = null;
+      const dispatcher = world.dispatchers.get(command.dispatcherId);
+      if (!dispatcher || getWheelWorldSlotOccupant(world.wheel, dispatcher.connectedWorldSlotIndex) !== command.ballId) continue;
+      const ball = requireBall(world, command.ballId);
+      setWheelWorldSlotOccupant(world.wheel, dispatcher.connectedWorldSlotIndex, null);
+      const lastSegment = dispatcher.segments.at(-1)!;
+      world.activeTransits.set(ball.id, {
+        ballId: ball.id,
+        routeDispatcherId: dispatcher.id,
+        sourceElement: { kind: "wheel", wheelId: world.wheel.id },
+        currentComponentId: lastSegment.componentId,
+        entryEdge: lastSegment.exitEdge,
+        previousEdge: lastSegment.exitEdge,
+        direction: "back",
+        localProgress: 1
+      });
+      events.push({ type: "BALL_EJECTED_FROM_WHEEL", wheelId: world.wheel.id, slideId: lastSegment.componentId, ballId: ball.id, color: ball.color, tick: world.tick, timeMs: world.timeMs });
+      continue;
+    }
+    world.pendingDispatchers.delete(command.dispatcherId);
+    const dispatcher = world.dispatchers.get(command.dispatcherId);
+    if (!dispatcher || dispatcher.heldBallId !== command.ballId) continue;
+    const ball = requireBall(world, command.ballId);
+    dispatcher.heldBallId = null;
+    scheduleNextRefill(world, dispatcher);
+    const firstSegment = dispatcher.segments[0];
+    world.activeTransits.set(ball.id, {
+      ballId: ball.id,
+      routeDispatcherId: dispatcher.id,
+      sourceElement: { kind: "dispatcher", dispatcherId: dispatcher.id },
+      currentComponentId: firstSegment.componentId,
+      entryEdge: firstSegment.entryEdge,
+      previousEdge: firstSegment.entryEdge,
+      direction: "forward",
+      localProgress: 0
+    });
+    events.push({ type: "BALL_DISPATCHED", dispatcherId: dispatcher.id, slideId: firstSegment.componentId, ballId: ball.id, color: ball.color, tick: world.tick, timeMs: world.timeMs });
   }
-
-  if (dispatcherConfig.hasInitialBall === false) {
-    return null;
-  }
-
-  return {
-    id: `${dispatcherConfig.id}:ball`,
-    color: "red"
-  };
 }
 
-function createBallFromSeed(seed: BallSeed, fallbackId: BallId): BallState {
-  return {
-    id: seed.id ?? fallbackId,
-    color: seed.color
-  };
-}
+function advanceTransit(world: DispatchBoardWorld, transit: ActiveDispatchTransit, deltaMs: number, events: DispatchBoardEvent[]): void {
+  const dispatcher = requireDispatcher(world, transit.routeDispatcherId);
+  let remaining = dispatcher.totalLength / world.transitTravelMs * deltaMs;
+  while (remaining > 0 && world.activeTransits.has(transit.ballId)) {
+    const segment = requireSegment(world, transit.currentComponentId);
+    const exitEdge = transit.direction === "forward" ? segment.exitEdge : segment.entryEdge;
+    const endpoint = resolveComponentConnection(world.connectionState, segment.componentId, exitEdge);
+    const endpointDistance = transit.direction === "forward"
+      ? (1 - transit.localProgress) * segment.length
+      : transit.localProgress * segment.length;
+    const occupiedWheelId = endpoint.kind === "wheel" && isWheelEndpointOccupied(world, dispatcher, endpoint.wheelId)
+      ? endpoint.wheelId
+      : null;
 
-function registerBall(balls: Record<BallId, BallState>, ball: BallState): void {
-  if (balls[ball.id]) {
-    throw new Error(`Duplicate ball "${ball.id}".`);
+    if (occupiedWheelId) {
+      const contactDistance = Math.max(0, endpointDistance - PEARL_DIAMETER_GRID_UNITS);
+      if (remaining >= contactDistance) {
+        moveTransit(transit, segment, contactDistance);
+        remaining -= contactDistance;
+        bounceTransit(world, transit, occupiedWheelId, events);
+        continue;
+      }
+    }
+
+    if (remaining < endpointDistance) {
+      moveTransit(transit, segment, remaining);
+      return;
+    }
+    moveTransit(transit, segment, endpointDistance);
+    remaining -= endpointDistance;
+    resolveTransitBoundary(world, transit, exitEdge, endpoint, events);
   }
-
-  balls[ball.id] = ball;
 }
 
-function scheduleNextRefill(
+function resolveTransitBoundary(
   world: DispatchBoardWorld,
-  dispatcher: DispatchBoardDispatcherState
+  transit: ActiveDispatchTransit,
+  exitEdge: ComponentTransitEdge,
+  endpoint: DispatchConnectionEndpoint,
+  events: DispatchBoardEvent[]
 ): void {
-  const nextBall = dispatcher.queue[0];
-  dispatcher.refillReadyAtMs = nextBall ? world.timeMs + nextBall.delayMs : null;
-}
-
-function assertNonNegativeDelay(delayMs: number, dispatcherId: string): void {
-  if (!Number.isFinite(delayMs) || delayMs < 0) {
-    throw new Error(`Dispatcher "${dispatcherId}" refill delay must be non-negative.`);
+  const ball = requireBall(world, transit.ballId);
+  world.lastHandoffEvent = { type: "TRANSIT_HANDOFF", ballId: ball.id, componentId: transit.currentComponentId, exitEdge, endpoint: { ...endpoint }, tick: world.tick, timeMs: world.timeMs };
+  events.push(world.lastHandoffEvent);
+  if (endpoint.kind === "dispatcher") {
+    delete world.balls[ball.id];
+    world.activeTransits.delete(ball.id);
+    world.lastBurnEvent = { type: "BALL_BURNED_AT_DISPATCHER", ballId: ball.id, color: ball.color, dispatcherId: endpoint.dispatcherId, tick: world.tick, timeMs: world.timeMs };
+    events.push(world.lastBurnEvent);
+    return;
+  }
+  if (endpoint.kind === "wheel") {
+    if (endpoint.wheelId !== world.wheel.id) throw new Error(`Unknown wheel endpoint "${endpoint.wheelId}".`);
+    const dispatcher = requireDispatcher(world, transit.routeDispatcherId);
+    if (isWheelEndpointOccupied(world, dispatcher, endpoint.wheelId)) {
+      bounceTransit(world, transit, endpoint.wheelId, events);
+      return;
+    }
+    const localSlotIndex = setWheelWorldSlotOccupant(world.wheel, dispatcher.connectedWorldSlotIndex, ball.id);
+    world.activeTransits.delete(ball.id);
+    events.push({ type: "BALL_LANDED_IN_WHEEL", slideId: transit.currentComponentId, wheelId: world.wheel.id, ballId: ball.id, color: ball.color, localSlotIndex, tick: world.tick, timeMs: world.timeMs });
+    evaluateClear(world, events);
+    return;
+  }
+  const next = requireSegment(world, endpoint.componentId);
+  transit.previousEdge = exitEdge;
+  transit.entryEdge = endpoint.entryEdge;
+  transit.currentComponentId = next.componentId;
+  if (endpoint.entryEdge === next.entryEdge) {
+    transit.direction = "forward";
+    transit.localProgress = 0;
+  } else if (endpoint.entryEdge === next.exitEdge) {
+    transit.direction = "back";
+    transit.localProgress = 1;
+  } else {
+    throw new Error(`Entry edge "${endpoint.entryEdge}" is incompatible with component "${next.componentId}".`);
   }
 }
 
-function getBallSnapshot(
-  world: DispatchBoardWorld,
-  ballId: BallId | null
-): BallState | null {
-  if (!ballId) {
-    return null;
-  }
-
-  return getRequiredBallSnapshot(world, ballId);
+function bounceTransit(world: DispatchBoardWorld, transit: ActiveDispatchTransit, wheelId: string, events: DispatchBoardEvent[]): void {
+  const dispatcher = requireDispatcher(world, transit.routeDispatcherId);
+  transit.direction = transit.direction === "forward" ? "back" : "forward";
+  world.lastBounceEvent = {
+    type: "BALL_BOUNCED",
+    ballId: transit.ballId,
+    color: requireBall(world, transit.ballId).color,
+    dispatcherId: dispatcher.id,
+    wheelId,
+    componentId: transit.currentComponentId,
+    localProgress: transit.localProgress,
+    tick: world.tick,
+    timeMs: world.timeMs
+  };
+  events.push(world.lastBounceEvent);
 }
 
-function getRequiredBallSnapshot(
-  world: DispatchBoardWorld,
-  ballId: BallId
-): BallState {
-  const ball = world.balls[ballId];
-
-  if (!ball) {
-    throw new Error(`Unknown ball "${ballId}".`);
-  }
-
-  return { ...ball };
+function moveTransit(transit: ActiveDispatchTransit, segment: ComponentTransitSegment, distance: number): void {
+  const delta = segment.length === 0 ? 0 : distance / segment.length;
+  transit.localProgress = Math.max(0, Math.min(1, transit.localProgress + (transit.direction === "forward" ? delta : -delta)));
 }
+
+function resolveDispatcherSegments(config: DispatchBoardConfig, dispatcher: DispatchBoardDispatcherConfig): readonly ComponentTransitSegment[] {
+  if (config.level) return buildDispatcherComponentTransitRoute(config.level, dispatcher.id, config.wheelId).segments;
+  if (dispatcher.transitSegments?.length) return dispatcher.transitSegments;
+  const slideId = dispatcher.slideId ?? "slide";
+  const entryEdge = dispatcher.entryEdge ?? "north";
+  const geometry = dispatcher.transitSegment ?? {
+    entry: { x: 0, y: 0 },
+    exit: { x: REFERENCE_TWO_SLIDE_ROUTE_LENGTH_GRID_UNITS, y: 0 },
+    length: REFERENCE_TWO_SLIDE_ROUTE_LENGTH_GRID_UNITS
+  };
+  return [{
+    id: `segment:${slideId}`,
+    componentId: slideId,
+    componentType: entryEdge === "west" || entryEdge === "east" ? "horizontalSlide" : "verticalSlide",
+    entryEdge,
+    exitEdge: oppositeEdge(entryEdge),
+    ...geometry
+  }];
+}
+
+function appendDispatcherConnections(
+  connections: ComponentConnectionDefinition[],
+  dispatcherId: string,
+  wheelId: string,
+  segments: readonly ComponentTransitSegment[]
+): void {
+  for (let index = 0; index < segments.length; index += 1) {
+    const segment = segments[index];
+    connections.push({
+      componentId: segment.componentId,
+      exitEdge: segment.exitEdge,
+      endpoint: index === segments.length - 1
+        ? { kind: "wheel", wheelId, entryEdge: oppositeEdge(segment.exitEdge) }
+        : { kind: "component", componentId: segments[index + 1].componentId, entryEdge: segments[index + 1].entryEdge }
+    });
+    connections.push({
+      componentId: segment.componentId,
+      exitEdge: segment.entryEdge,
+      endpoint: index === 0
+        ? { kind: "dispatcher", dispatcherId, entryEdge: oppositeEdge(segment.entryEdge) }
+        : { kind: "component", componentId: segments[index - 1].componentId, entryEdge: segments[index - 1].exitEdge }
+    });
+  }
+}
+
+function addTerminalPort(ports: ComponentTerminalPort[], port: ComponentTerminalPort): void {
+  const existing = ports.find((candidate) => candidate.kind === port.kind && candidate.id === port.id && candidate.edge === port.edge);
+  if (!existing) {
+    ports.push(port);
+    return;
+  }
+  if (Math.hypot(existing.point.x - port.point.x, existing.point.y - port.point.y) > 1e-8) {
+    throw new Error(`Terminal port "${port.kind}:${port.id}:${port.edge}" has conflicting level geometry.`);
+  }
+}
+
+function validateConnectionOptions(
+  options: readonly ComponentConnectionOption[],
+  componentIds: ReadonlySet<string>,
+  dispatchers: ReadonlyMap<string, DispatchBoardDispatcherState>,
+  wheelId: string
+): void {
+  for (const { endpoint } of options) {
+    const valid = endpoint.kind === "component"
+      ? componentIds.has(endpoint.componentId)
+      : endpoint.kind === "dispatcher"
+        ? dispatchers.has(endpoint.dispatcherId)
+        : endpoint.wheelId === wheelId;
+    if (!valid) throw new Error("Connection option references an unknown board endpoint.");
+  }
+}
+
+function isWheelEndpointOccupied(world: DispatchBoardWorld, dispatcher: DispatchBoardDispatcherState, wheelId: string): boolean {
+  if (wheelId !== world.wheel.id) throw new Error(`Unknown wheel endpoint "${wheelId}".`);
+  const localSlot = mod(dispatcher.connectedWorldSlotIndex - world.wheel.rotationStep, world.wheel.slotCount);
+  return getWheelSlotsSnapshot(world.wheel)[localSlot] !== null;
+}
+
+function resolveRefills(world: DispatchBoardWorld, events: DispatchBoardEvent[]): void {
+  for (const dispatcher of world.dispatchers.values()) {
+    if (dispatcher.heldBallId !== null || dispatcher.refillReadyAtMs === null || world.timeMs < dispatcher.refillReadyAtMs) continue;
+    const queued = dispatcher.queue.shift();
+    dispatcher.refillReadyAtMs = null;
+    if (!queued) continue;
+    const ball = requireBall(world, queued.ballId);
+    dispatcher.heldBallId = ball.id;
+    events.push({ type: "DISPATCHER_REFILLED", dispatcherId: dispatcher.id, ballId: ball.id, color: ball.color, tick: world.tick, timeMs: world.timeMs });
+  }
+}
+
+function evaluateClear(world: DispatchBoardWorld, events: DispatchBoardEvent[]): void {
+  const match = evaluateWheelClearRule(world.wheelClearRule, world.wheel.slots, world.balls);
+  if (!match) return;
+  world.wheelClearCount += 1;
+  for (const id of match.consumedBallIds) delete world.balls[id];
+  world.wheel.slots.fill(null);
+  world.lastClearEvent = { type: "WHEEL_CLEARED", wheelId: world.wheel.id, color: match.color, consumedBallIds: match.consumedBallIds, clearCount: world.wheelClearCount, tick: world.tick, timeMs: world.timeMs };
+  events.push(world.lastClearEvent);
+}
+
+function transitSnapshot(world: DispatchBoardWorld, transit: ActiveDispatchTransit): DispatchTransitSnapshot {
+  const segment = requireSegment(world, transit.currentComponentId);
+  const exitEdge = transit.direction === "forward" ? segment.exitEdge : segment.entryEdge;
+  const endpoint = resolveComponentConnection(world.connectionState, segment.componentId, exitEdge);
+  return {
+    ball: { ...requireBall(world, transit.ballId) },
+    originDispatcherId: transit.sourceElement.kind === "dispatcher" ? transit.sourceElement.dispatcherId : null,
+    sourceElement: { ...transit.sourceElement },
+    currentComponentId: transit.currentComponentId,
+    entryEdge: transit.entryEdge,
+    previousEdge: transit.previousEdge,
+    direction: transit.direction,
+    localProgress: transit.localProgress,
+    endpointIntent: { exitEdge, endpoint: { ...endpoint } },
+    segment,
+    position: {
+      x: segment.entry.x + (segment.exit.x - segment.entry.x) * transit.localProgress,
+      y: segment.entry.y + (segment.exit.y - segment.entry.y) * transit.localProgress
+    }
+  };
+}
+
+function appendEventHistory(world: DispatchBoardWorld, events: readonly DispatchBoardEvent[]): void {
+  if (events.length === 0) return;
+  world.lastEvents.push(...events);
+  if (world.lastEvents.length > DEBUG_EVENT_HISTORY_LIMIT) world.lastEvents.splice(0, world.lastEvents.length - DEBUG_EVENT_HISTORY_LIMIT);
+}
+
+function requireSegment(world: DispatchBoardWorld, componentId: string): ComponentTransitSegment {
+  for (const dispatcher of world.dispatchers.values()) {
+    const segment = dispatcher.segments.find((candidate) => candidate.componentId === componentId);
+    if (segment) return segment;
+  }
+  throw new Error(`Unknown transit component "${componentId}".`);
+}
+
+function requireDispatcher(world: DispatchBoardWorld, dispatcherId: string): DispatchBoardDispatcherState {
+  const dispatcher = world.dispatchers.get(dispatcherId);
+  if (!dispatcher) throw new Error(`Unknown dispatcher "${dispatcherId}".`);
+  return dispatcher;
+}
+
+function dispatcherSnapshot(world: DispatchBoardWorld, dispatcher: DispatchBoardDispatcherState): DispatchBoardDispatcherSnapshot {
+  return {
+    id: dispatcher.id,
+    slideId: dispatcher.slideId,
+    hasBall: dispatcher.heldBallId !== null,
+    ball: getBallSnapshot(world, dispatcher.heldBallId),
+    refillReadyAtMs: dispatcher.refillReadyAtMs,
+    queuedBalls: dispatcher.queue.map((queued) => ({ ...requireBall(world, queued.ballId) })),
+    connectedWorldSlotIndex: dispatcher.connectedWorldSlotIndex
+  };
+}
+
+function createInitialBall(config: DispatchBoardDispatcherConfig): BallState | null {
+  if (config.initialBall) return createBallFromSeed(config.initialBall, `${config.id}:ball`);
+  return config.hasInitialBall === false ? null : { id: `${config.id}:ball`, color: "red" };
+}
+function createBallFromSeed(seed: BallSeed, fallbackId: BallId): BallState { return { id: seed.id ?? fallbackId, color: seed.color }; }
+function registerBall(balls: Record<BallId, BallState>, ball: BallState): void { if (balls[ball.id]) throw new Error(`Duplicate ball "${ball.id}".`); balls[ball.id] = ball; }
+function scheduleNextRefill(world: DispatchBoardWorld, dispatcher: DispatchBoardDispatcherState): void { const next = dispatcher.queue[0]; dispatcher.refillReadyAtMs = next ? world.timeMs + next.delayMs : null; }
+function assertNonNegativeDelay(delayMs: number, dispatcherId: string): void { if (!Number.isFinite(delayMs) || delayMs < 0) throw new Error(`Dispatcher "${dispatcherId}" refill delay must be non-negative.`); }
+function getBallSnapshot(world: DispatchBoardWorld, ballId: BallId | null): BallState | null { return ballId ? { ...requireBall(world, ballId) } : null; }
+function requireBall(world: DispatchBoardWorld, ballId: BallId): BallState { const ball = world.balls[ballId]; if (!ball) throw new Error(`Unknown ball "${ballId}".`); return ball; }
+function oppositeEdge(edge: ComponentTransitEdge): ComponentTransitEdge { switch (edge) { case "north": return "south"; case "east": return "west"; case "south": return "north"; case "west": return "east"; } }

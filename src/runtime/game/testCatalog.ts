@@ -5,6 +5,8 @@ import { testColoredDispatcherSlideWheel3x8Level } from "../../core/levels/test/
 import { testDoubleDispatcherWheel8x8Level } from "../../core/levels/test/testDoubleDispatcherWheel8x8Level";
 import { testWheelTransfer3x8Level } from "../../core/levels/test/testWheelTransfer3x8Level";
 import { testWheelBounce3x8Level } from "../../core/levels/test/testWheelBounce3x8Level";
+import { testMultiPearlCollision3x10Config, testMultiPearlCollision3x10Level } from "../../core/levels/test/testMultiPearlCollision3x10Level";
+import { testReusableHarmonyWheelClear3x8Level } from "../../core/levels/test/testReusableHarmonyWheelClear3x8Level";
 import { TestWheelScene } from "../scenes/TestWheelScene";
 import { TestBoardScene } from "../scenes/TestBoardScene";
 import { TestWheelTransferScene } from "../scenes/TestWheelTransferScene";
@@ -65,7 +67,14 @@ export const TEST_CATALOG: readonly TestCatalogEntry[] = [
     description: "3x8 board with two wheels connected by two slides for reversible ball transfer.",
     createScene: () =>
       new TestWheelTransferScene({
-        level: testWheelTransfer3x8Level
+        level: testWheelTransfer3x8Level,
+        controller: {
+          topWheelId: "wheel-top",
+          bottomWheelId: "wheel-bottom",
+          wheelSlotCount: 8,
+          topConnectedWorldSlotIndex: 4,
+          bottomConnectedWorldSlotIndex: 0
+        }
       })
   },
   {
@@ -110,9 +119,27 @@ export const TEST_CATALOG: readonly TestCatalogEntry[] = [
           topWheelId: "wheel-top",
           bottomWheelId: "wheel-bottom",
           wheelSlotCount: 8,
+          topConnectedWorldSlotIndex: 4,
+          bottomConnectedWorldSlotIndex: 0,
           initialBallWheelIds: ["wheel-top", "wheel-bottom"]
         }
       })
+  },
+  {
+    slug: "test-7",
+    title: "Test 7",
+    description: "3x10 two-wheel board where red and blue pearls collide and reverse on one slide.",
+    createScene: () =>
+      new TestWheelTransferScene({
+        level: testMultiPearlCollision3x10Level,
+        controller: testMultiPearlCollision3x10Config
+      })
+  },
+  {
+    slug: "test-8",
+    title: "Test 8",
+    description: "3x8 dispatcher board with a reusable harmony wheel that clears when full of one color.",
+    createScene: () => new TestBoardScene({ level: testReusableHarmonyWheelClear3x8Level })
   }
 ];
 

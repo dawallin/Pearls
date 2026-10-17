@@ -40,7 +40,11 @@ function renderSelector(app: HTMLElement, invalidSlug: string | null): void {
   app.innerHTML = `
     <div
       style="
+        height:100vh;
         min-height:100vh;
+        overflow-y:auto;
+        overscroll-behavior:contain;
+        -webkit-overflow-scrolling:touch;
         background:radial-gradient(circle at top, #193246 0%, #0b1117 60%);
         color:#f3efe4;
         font-family:Georgia, 'Times New Roman', serif;

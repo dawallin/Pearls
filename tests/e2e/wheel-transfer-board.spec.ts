@@ -140,6 +140,9 @@ test("transfers a ball between two wheels only when slide-aligned", async ({ pag
   });
 
   const rotatedTopBall = await getBallPoint(page, "wheel-top");
+  const eventCountBeforeBlockedClick = await page.evaluate(() =>
+    (globalThis.__PEARLS__?.getSnapshot() as { lastEvents?: unknown[] } | undefined)?.lastEvents?.length ?? 0
+  );
   await page.mouse.click(box.x + rotatedTopBall.x, box.y + rotatedTopBall.y);
 
   const blockedSnapshot = await page.evaluate(() => {
@@ -161,7 +164,7 @@ test("transfers a ball between two wheels only when slide-aligned", async ({ pag
   expect(blockedSnapshot.transitInProgress).toBe(false);
   expect(blockedSnapshot.components.wheels["wheel-top"].hasBall).toBe(true);
   expect(blockedSnapshot.components.wheels["wheel-bottom"].hasBall).toBe(false);
-  expect(blockedSnapshot.lastEvents).toEqual([]);
+  expect(blockedSnapshot.lastEvents).toHaveLength(eventCountBeforeBlockedClick);
 });
 
 async function getBallPoint(

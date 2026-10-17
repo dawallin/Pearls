@@ -73,6 +73,58 @@ describe("gridLevel", () => {
     expect(level.cells[0].height).toBe(3);
   });
 
+  it("accepts a harmony clear rule only on a wheel", () => {
+    const level = createGridLevelDefinition({
+      id: "harmony-level",
+      name: "Harmony",
+      columns: 3,
+      rows: 3,
+      cells: [
+        {
+          column: 0,
+          row: 0,
+          width: 3,
+          height: 3,
+          component: {
+            type: "wheel",
+            id: "wheel-a",
+            slotCount: 8,
+            clearRule: { type: "harmony" }
+          }
+        }
+      ]
+    });
+
+    expect(level.cells[0].component).toMatchObject({
+      clearRule: { type: "harmony" }
+    });
+  });
+
+  it("rejects an unsupported wheel clear rule", () => {
+    expect(() =>
+      createGridLevelDefinition({
+        id: "invalid-clear-rule-level",
+        name: "Invalid clear rule",
+        columns: 3,
+        rows: 3,
+        cells: [
+          {
+            column: 0,
+            row: 0,
+            width: 3,
+            height: 3,
+            component: {
+              type: "wheel",
+              id: "wheel-a",
+              slotCount: 8,
+              clearRule: { type: "pattern" } as never
+            }
+          }
+        ]
+      })
+    ).toThrow('Wheel "wheel-a" has an unsupported clear rule.');
+  });
+
   it("creates a valid level with a right-facing dispatcher component", () => {
     const level = createGridLevelDefinition({
       id: "level-test",

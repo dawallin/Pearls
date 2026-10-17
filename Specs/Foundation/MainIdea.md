@@ -55,7 +55,9 @@ Pearls‑logiken kan beskrivas som en graf: **Wheels** med diskreta **slots** oc
 - `wheel.rotationStep` är heltal modulo `slotCount`
 - Varje wheel har en lokal slot‑array med längd `slotCount`: `slots[localIndex]`
 - En chute endpoint refererar till en **world slot index** på ett wheel (fast i världen); den lokala sloten under endpoint beror på rotation.
-- Transiter ignorerar kollisioner: flera pärlor kan vara på samma chute och passera “igenom” varandra.
+- Transiter på samma ogrenade chute får dela vägen, men pärlor som rör sig i motsatt riktning får aldrig passera igenom varandra. Core fångar även korsningar mellan tick-snapshots och vänder varje par vid en deterministisk kontaktposition. Samtidiga par sorteras stabilt på path, kontakttid och pearl-ID; rendering får endast visa resultatet.
+- En transit äger endast sin aktiva komponent, entry/previous edge, riktning och komponentlokala progress. Vid komponentgränsen slår core upp nästa endpoint i den aktuella, portvaliderade anslutningsgrafen; en framtida route eller route-index är aldrig auktoritativt state. Runtime projicerar endast den aktiva komponentgeometrin till pixlar.
+- Ett element får ejecta en pärla när pärlan är riktad mot en direkt angränsande chute/slide-port. Ejection-gaten får inte läsa, reservera eller förutsätta vad som finns bortom den angränsande komponenten; downstream occupancy löses först när pärlan når respektive endpoint.
 
 ### Exempel på TypeScript‑typer
 

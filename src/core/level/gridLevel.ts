@@ -1,4 +1,5 @@
 import type { BallSeed } from "../ball/ballState";
+import type { WheelClearRule } from "../wheel/wheelClearRule";
 
 export type GridCellCoordinate = Readonly<{
   column: number;
@@ -14,6 +15,7 @@ export type WheelLevelComponent = Readonly<{
   type: "wheel";
   id: string;
   slotCount: number;
+  clearRule?: WheelClearRule;
 }>;
 
 export type DispatcherDownLevelComponent = Readonly<{
@@ -115,6 +117,12 @@ export function createGridLevelDefinition(
     switch (cell.component.type) {
       case "wheel":
         assertPositiveInteger(cell.component.slotCount, `Wheel "${cell.component.id}" slotCount`);
+        if (
+          cell.component.clearRule &&
+          (cell.component.clearRule as Readonly<{ type?: unknown }>).type !== "harmony"
+        ) {
+          throw new Error(`Wheel "${cell.component.id}" has an unsupported clear rule.`);
+        }
         break;
       case "dispatcherDown":
       case "dispatcherRight":
