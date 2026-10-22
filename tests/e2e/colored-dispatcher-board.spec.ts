@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { REFILL_DELAY_MS_BY_SPEED } from "../../src/core/board/refillSpeed";
 
 test("dispatches red, green, then blue with deterministic refills", async ({ page }) => {
   await page.goto("/?test=test-5");
@@ -29,7 +30,7 @@ test("dispatches red, green, then blue with deterministic refills", async ({ pag
 
   await dispatchCurrentBall(page, box);
   await rotateWheel(page, box);
-  await advanceTime(page, 2000);
+  await advanceTime(page, REFILL_DELAY_MS_BY_SPEED.slow);
   expect((await getColoredDispatchSnapshot(page)).components.dispatcher.ball).toEqual({
     id: "ball-green",
     color: "green"
@@ -37,7 +38,7 @@ test("dispatches red, green, then blue with deterministic refills", async ({ pag
 
   await dispatchCurrentBall(page, box);
   await rotateWheel(page, box);
-  await advanceTime(page, 2000);
+  await advanceTime(page, REFILL_DELAY_MS_BY_SPEED.slow);
   expect((await getColoredDispatchSnapshot(page)).components.dispatcher.ball).toEqual({
     id: "ball-blue",
     color: "blue"
@@ -45,7 +46,7 @@ test("dispatches red, green, then blue with deterministic refills", async ({ pag
 
   await dispatchCurrentBall(page, box);
   await rotateWheel(page, box);
-  await advanceTime(page, 4000);
+  await advanceTime(page, REFILL_DELAY_MS_BY_SPEED.slow * 2);
 
   const finalSnapshot = await getColoredDispatchSnapshot(page);
 

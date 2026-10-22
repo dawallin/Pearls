@@ -7,6 +7,7 @@ import { testWheelTransfer3x8Level } from "../../core/levels/test/testWheelTrans
 import { testWheelBounce3x8Level } from "../../core/levels/test/testWheelBounce3x8Level";
 import { testMultiPearlCollision3x10Config, testMultiPearlCollision3x10Level } from "../../core/levels/test/testMultiPearlCollision3x10Level";
 import { testReusableHarmonyWheelClear3x8Level } from "../../core/levels/test/testReusableHarmonyWheelClear3x8Level";
+import { testFixedPatternWheelClear3x8Level } from "../../core/levels/test/testFixedPatternWheelClear3x8Level";
 import { TestWheelScene } from "../scenes/TestWheelScene";
 import { TestBoardScene } from "../scenes/TestBoardScene";
 import { TestWheelTransferScene } from "../scenes/TestWheelTransferScene";
@@ -97,12 +98,12 @@ export const TEST_CATALOG: readonly TestCatalogEntry[] = [
             {
               id: "ball-green",
               color: "green",
-              delayMs: 2000
+              refillSpeed: "slow"
             },
             {
               id: "ball-blue",
               color: "blue",
-              delayMs: 2000
+              refillSpeed: "slow"
             }
           ]
         }
@@ -140,6 +141,12 @@ export const TEST_CATALOG: readonly TestCatalogEntry[] = [
     title: "Test 8",
     description: "3x8 dispatcher board with a reusable harmony wheel that clears when full of one color.",
     createScene: () => new TestBoardScene({ level: testReusableHarmonyWheelClear3x8Level })
+  },
+  {
+    slug: "test-9",
+    title: "Test 9",
+    description: "Fill the wheel so each pearl matches its local slot's color target.",
+    createScene: () => new TestBoardScene({ level: testFixedPatternWheelClear3x8Level })
   }
 ];
 

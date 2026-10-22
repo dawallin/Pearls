@@ -56,6 +56,10 @@ Level files place and configure components. They do not implement behavior.
 
 Transit routes and collision geometry are derived by core from component placement, spans, connection slots, and shared physical constants. Level files must not contain renderer-calibrated collision distances or visual correction values.
 
+## Refill Tuning Rule
+
+Level data expresses dispatcher refill pacing with a named `refillSpeed` (`fast` or `slow`) rather than an authored millisecond value. The deterministic core owns the mapping from these choices to exact simulation durations. This keeps level intent readable and ensures the same speed has the same behavior across levels; tests may advance core time by the corresponding duration without sleeping on wall-clock time.
+
 ## Test Level Rule
 
 Every new component type must ship with at least one minimal test level.

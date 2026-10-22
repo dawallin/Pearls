@@ -46,8 +46,9 @@ After the bounce finishes, both balls remain in their original wheel slots.
 6. A ball can leave a wheel only from that wheel's slide-facing connected hole.
 7. If the destination connected hole is occupied, the source ball bounces back.
 8. The bounce contact is derived from shared pearl geometry before the destination slot center, not a level-authored distance.
-8. A bounced ball remains in its original source wheel slot.
-9. Runtime animation must not decide whether a transfer or bounce occurred.
+9. A bounced ball returns to its source wheel through the slide graph; arrival uses the source wheel rotation at that later tick.
+10. Launching both aligned pearls before they meet causes one slide collision; both pearls reverse and return to their source wheels with their identities preserved.
+11. Runtime animation must not decide whether a transfer or bounce occurred.
 
 ## Acceptance Criteria
 
@@ -62,7 +63,9 @@ After the bounce finishes, both balls remain in their original wheel slots.
 
 - unit coverage for occupied-destination bounce without state mutation
 - integration coverage for controller bounce animation instruction
-- behavior coverage for `test-6` bounce flow
+- unit coverage for a completely full destination wheel, preserving all occupants
+- unit coverage for opposing Test 6 launches and iteration-order independence
+- behavior coverage for `test-6` occupied-slot bounce and opposing-pearl collision flows
 
 ## Open Questions
 

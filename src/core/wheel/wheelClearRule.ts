@@ -1,11 +1,11 @@
 import type { BallColor, BallId, BallState } from "../ball/ballState";
 
-export type WheelClearRule = Readonly<{
-  type: "harmony";
-}>;
+export type WheelClearRule =
+  | Readonly<{ type: "harmony" }>
+  | Readonly<{ type: "pattern"; targetColors: readonly BallColor[] }>;
 
 export type WheelClearMatch = Readonly<{
-  color: BallColor;
+  color?: BallColor;
   consumedBallIds: readonly BallId[];
 }>;
 
@@ -40,6 +40,21 @@ export function evaluateWheelClearRule(
         color: firstBall.color,
         consumedBallIds: [...consumedBallIds]
       };
+    }
+    case "pattern": {
+      if (clearRule.targetColors.length !== slots.length) {
+        throw new Error("Wheel pattern target count must match the slot count.");
+      }
+
+      const consumedBallIds = slots as readonly BallId[];
+      for (let localSlotIndex = 0; localSlotIndex < consumedBallIds.length; localSlotIndex += 1) {
+        const ballId = consumedBallIds[localSlotIndex];
+        const ball = balls[ballId];
+        if (!ball) throw new Error(`Unknown wheel ball "${ballId}".`);
+        if (ball.color !== clearRule.targetColors[localSlotIndex]) return null;
+      }
+
+      return { consumedBallIds: [...consumedBallIds] };
     }
   }
 }

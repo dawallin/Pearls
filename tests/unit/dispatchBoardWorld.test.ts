@@ -11,8 +11,10 @@ import {
   type DispatchBoardConfig,
   type DispatchBoardEvent
 } from "../../src/core/board/dispatchBoardWorld";
+import { testFixedPatternWheelClear3x8Level } from "../../src/core/levels/test/testFixedPatternWheelClear3x8Level";
 import { testDispatcherSlideWheel3x8Level } from "../../src/core/levels/test/testDispatcherSlideWheel3x8Level";
 import { setWheelWorldSlotOccupant } from "../../src/core/wheel/wheelState";
+import { REFILL_DELAY_MS_BY_SPEED } from "../../src/core/board/refillSpeed";
 
 const travelMs = 32;
 function createWorld(overrides: Omit<DispatchBoardConfig, "wheelId" | "wheelSlotCount"> = {}) {
@@ -50,14 +52,14 @@ describe("dispatchBoardWorld first-class transit", () => {
       transitTravelMs: 64
     });
     dispatchBall(world);
-    advanceDispatchBoardTime(world, 48);
+    advanceDispatchBoardTime(world, 64);
     expect(getDispatchBoardSnapshot(world).activeTransits).toMatchObject([{
       currentComponentId: "slide-01-b",
       entryEdge: "north",
       direction: "forward",
       segment: { componentId: "slide-01-b" }
     }]);
-    const events = advanceDispatchBoardTime(world, 16);
+    const events = advanceDispatchBoardTime(world, 32);
     expect(getDispatchBoardSnapshot(world).lastEvents.filter((event) => event.type === "TRANSIT_HANDOFF")).toMatchObject([
       { componentId: "slide-01-a", endpoint: { kind: "component", componentId: "slide-01-b", entryEdge: "north" } },
       { componentId: "slide-01-b", endpoint: { kind: "wheel", wheelId: "wheel-01", entryEdge: "north" } }
@@ -66,24 +68,55 @@ describe("dispatchBoardWorld first-class transit", () => {
   });
 
   it("dispatches despite an occupied wheel, bounces, and burns at the origin after refill", () => {
-    const world = createWorld({ initialBall: { id: "first", color: "red" }, refillQueue: [{ id: "second", color: "blue", delayMs: 1 }, { id: "third", color: "green", delayMs: 1 }] });
+    const world = createWorld({ initialBall: { id: "first", color: "red" }, refillQueue: [{ id: "second", color: "blue", refillSpeed: "fast" }, { id: "third", color: "green", refillSpeed: "fast" }] });
     dispatchBall(world);
     advanceDispatchBoardTime(world, travelMs);
+    advanceDispatchBoardTime(world, REFILL_DELAY_MS_BY_SPEED.fast);
     expect(getDispatchBoardSnapshot(world).dispatcher.ball).toEqual({ id: "second", color: "blue" });
     dispatchBall(world);
-    const events = advanceDispatchBoardTime(world, travelMs * 3);
+    const events = advanceDispatchBoardTime(world, REFILL_DELAY_MS_BY_SPEED.fast + travelMs * 3);
     expect(events.map((event) => event.type)).toContain("BALL_BOUNCED");
     expect(events).toContainEqual(expect.objectContaining({ type: "BALL_BURNED_AT_DISPATCHER", ballId: "second", dispatcherId: "dispatcher-a", color: "blue" }));
     expect(getDispatchBoardSnapshot(world).dispatcher.ball).toEqual({ id: "third", color: "green" });
   });
 
+  it("collides Test 9 wheel and dispatcher pearls, then burns the return without stopping refills", () => {
+    const level = testFixedPatternWheelClear3x8Level;
+    const component = level.cells[0].component;
+    if (component.type !== "dispatcherDown") throw new Error("Expected dispatcher.");
+    const world = createDispatchBoardWorld({ level, wheelId: "wheel-01", wheelSlotCount: 8, dispatchers: [{ id: component.id, initialBall: component.initialBall, refillQueue: component.refillQueue }] });
+    dispatchBall(world);
+    advanceDispatchBoardTime(world, 800);
+    const first = getDispatchBoardSnapshot(world).wheel.slotBallIds[0]!;
+    const second = getDispatchBoardSnapshot(world).dispatcher.ball!.id;
+    dispatchBall(world);
+    advanceDispatchBoardTime(world, 16);
+    expect(ejectBallFromWheel(world, 0)).not.toBeNull();
+    const events = advanceDispatchBoardTime(world, 1600);
+    expect(events.filter((event) => event.type === "BALL_COLLIDED")).toHaveLength(1);
+    expect(events).toContainEqual(expect.objectContaining({ type: "BALL_COLLIDED", ballIds: [first, second].sort() }));
+    expect(events).toContainEqual(expect.objectContaining({ type: "BALL_BURNED_AT_DISPATCHER", ballId: second }));
+    const settled = getDispatchBoardSnapshot(world);
+    expect(settled.wheel.slotBallIds[0]).toBe(first);
+    expect(settled.activeTransits).toEqual([]);
+    expect(settled.dispatcher.ball?.id).toBe("ball-red-03");
+    ejectBallFromWheel(world, 0);
+    advanceDispatchBoardTime(world, 1000);
+    expect(getDispatchBoardSnapshot(world).dispatcher.ball?.id).toBe("ball-red-03");
+    expect(dispatchBall(world)).not.toBeNull();
+    advanceDispatchBoardTime(world, 1000);
+    expect(getDispatchBoardSnapshot(world).wheel.slotBallIds[0]).toBe("ball-red-03");
+    expect(getDispatchBoardSnapshot(world).dispatcher.ball?.id).toBe("ball-red-04");
+  });
+
   it("ejects an aligned wheel pearl into the adjacent slide without inspecting the dispatcher", () => {
     const world = createWorld({
       initialBall: { id: "first", color: "red" },
-      refillQueue: [{ id: "held-at-dispatcher", color: "blue", delayMs: 1 }]
+      refillQueue: [{ id: "held-at-dispatcher", color: "blue", refillSpeed: "fast" }]
     });
     dispatchBall(world);
     advanceDispatchBoardTime(world, travelMs);
+    advanceDispatchBoardTime(world, REFILL_DELAY_MS_BY_SPEED.fast);
     expect(getDispatchBoardSnapshot(world)).toMatchObject({
       dispatcher: { ball: { id: "held-at-dispatcher" } },
       wheel: { slotBallIds: ["first", null, null, null, null, null, null, null] }
@@ -112,7 +145,7 @@ describe("dispatchBoardWorld first-class transit", () => {
   });
 
   it("evaluates harmony clearing only after the eighth real landing", () => {
-    const world = createWorld({ wheelClearRule: { type: "harmony" }, initialBall: { id: "ball-01", color: "red" }, refillQueue: Array.from({ length: 7 }, (_, index) => ({ id: `ball-${String(index + 2).padStart(2, "0")}`, color: "red" as const, delayMs: 1 })) });
+    const world = createWorld({ wheelClearRule: { type: "harmony" }, initialBall: { id: "ball-01", color: "red" }, refillQueue: Array.from({ length: 7 }, (_, index) => ({ id: `ball-${String(index + 2).padStart(2, "0")}`, color: "red" as const, refillSpeed: "fast" as const })) });
     let events: readonly DispatchBoardEvent[] = [];
     for (let index = 0; index < 8; index += 1) {
       dispatchBall(world);
@@ -120,6 +153,7 @@ describe("dispatchBoardWorld first-class transit", () => {
       if (index < 7) {
         rotateWheelClockwise(world);
         advanceDispatchBoardTime(world, 16);
+        advanceDispatchBoardTime(world, REFILL_DELAY_MS_BY_SPEED.fast);
       }
     }
     expect(events).toContainEqual(expect.objectContaining({ type: "WHEEL_CLEARED", clearCount: 1, color: "red" }));
@@ -138,19 +172,19 @@ describe("dispatchBoardWorld first-class transit", () => {
   });
 
   it("preserves the complete ordered event stream regardless of frame partitioning", () => {
-    const config = { initialBall: { id: "first", color: "red" as const }, refillQueue: [{ id: "second", color: "blue" as const, delayMs: 16 }] };
+    const config = { initialBall: { id: "first", color: "red" as const }, refillQueue: [{ id: "second", color: "blue" as const, refillSpeed: "fast" as const }] };
     const singleFrame = createWorld(config);
     const partitioned = createWorld(config);
     dispatchBall(singleFrame);
     dispatchBall(partitioned);
 
-    const singleEvents = advanceDispatchBoardTime(singleFrame, 64);
+    const singleEvents = advanceDispatchBoardTime(singleFrame, 320);
     const partitionedEvents: DispatchBoardEvent[] = [];
-    for (let elapsed = 0; elapsed < 64; elapsed += 1) partitionedEvents.push(...advanceDispatchBoardTime(partitioned, 1));
+    for (let elapsed = 0; elapsed < 320; elapsed += 1) partitionedEvents.push(...advanceDispatchBoardTime(partitioned, 1));
 
     expect(singleEvents).toEqual(partitionedEvents);
     expect(getDispatchBoardSnapshot(singleFrame)).toEqual(getDispatchBoardSnapshot(partitioned));
-    expect(singleEvents.map((event) => event.type)).toEqual(["BALL_DISPATCHED", "DISPATCHER_REFILLED", "TRANSIT_HANDOFF", "BALL_LANDED_IN_WHEEL"]);
+    expect(singleEvents.map((event) => event.type)).toEqual(["BALL_DISPATCHED", "TRANSIT_HANDOFF", "BALL_LANDED_IN_WHEEL", "DISPATCHER_REFILLED"]);
   });
 
   it("does not rewind progress when wheel occupancy appears after contact was already passed", () => {

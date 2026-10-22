@@ -2,6 +2,7 @@ export type PearlsDebugSurface<TSnapshot> = {
   getSnapshot: () => TSnapshot;
   pressDispatcher: (dispatcherId?: string) => void;
   requestRotateTurn: (wheelId?: string) => void;
+  ejectWheelPearl?: (localSlotIndex: number) => void;
   advanceTime?: (deltaMs: number) => void;
   setSimulationSpeed?: (multiplier: number) => void;
 };

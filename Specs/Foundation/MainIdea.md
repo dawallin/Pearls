@@ -55,9 +55,23 @@ Pearls‑logiken kan beskrivas som en graf: **Wheels** med diskreta **slots** oc
 - `wheel.rotationStep` är heltal modulo `slotCount`
 - Varje wheel har en lokal slot‑array med längd `slotCount`: `slots[localIndex]`
 - En chute endpoint refererar till en **world slot index** på ett wheel (fast i världen); den lokala sloten under endpoint beror på rotation.
-- Transiter på samma ogrenade chute får dela vägen, men pärlor som rör sig i motsatt riktning får aldrig passera igenom varandra. Core fångar även korsningar mellan tick-snapshots och vänder varje par vid en deterministisk kontaktposition. Samtidiga par sorteras stabilt på path, kontakttid och pearl-ID; rendering får endast visa resultatet.
-- En transit äger endast sin aktiva komponent, entry/previous edge, riktning och komponentlokala progress. Vid komponentgränsen slår core upp nästa endpoint i den aktuella, portvaliderade anslutningsgrafen; en framtida route eller route-index är aldrig auktoritativt state. Runtime projicerar endast den aktiva komponentgeometrin till pixlar.
+- Transiter på samma ogrenade chute får dela vägen, men pärlor som rör sig i motsatt riktning får aldrig passera igenom varandra. Core fångar även korsningar mellan tick-snapshots och vänder varje par vid en deterministisk kontaktposition. Kontakter löses i tidsordning och samtidiga par sorteras stabilt på pearl-ID; rendering får endast visa resultatet.
+- Kollisionsgeometri och parupplösning är en gemensam core-regel för alla världar som flyttar pärlor genom komponentgrafer. En värld får äga sina egna kommandon, hjul och endpoints, men får inte ha en egen ofullständig kopia av fysiken eller hoppa över collision pass för sina transiter.
+- Varje pärla i transit har exakt en ägande komponent (`currentComponentId`). Komponentlokal progress lagras som avstånd i grid-enheter från komponentens entry-port. Ursprungligt hjul eller dispatcher styr inte fortsatt rörelse. Vid komponentgränsen slår core upp nästa endpoint i den aktuella, portvaliderade anslutningsgrafen; en framtida route eller route-index är aldrig auktoritativt state. Runtime projicerar endast den aktiva komponentgeometrin till pixlar.
 - Ett element får ejecta en pärla när pärlan är riktad mot en direkt angränsande chute/slide-port. Ejection-gaten får inte läsa, reservera eller förutsätta vad som finns bortom den angränsande komponenten; downstream occupancy löses först när pärlan når respektive endpoint.
+
+### Komponentöverlämning och gemensam transittidslinje
+
+`componentTransitSystem` driver både dispatcher- och hjultransiter med samma regler. Världen tillhandahåller komponentgeometri, aktuell anslutningsgraf, aktiva transiter och terminalregler för landning, studs och bränning.
+
+- En överlämning byter ägande komponent atomiskt vid porten. Pearl-ID och färg bevaras, lokal progress sätts vid mottagarporten och återstående ticktid fortsätter i den mottagande komponenten.
+- Kollisionskandidater hämtas från samma komponent och direkt anslutna grannkomponenter. Fysisk pärldiameter och relativ rörelse avgör kontakt även när pärlornas centrum ligger på varsin sida av en port. Oanslutna komponenter kolliderar inte genom geografisk närhet.
+- Alla transiter avancerar på samma tidslinje inom ett fast tick. Core beräknar nästa pärlkontakt eller komponent-/terminalgräns, avancerar samtliga transiter till den tidpunkten, löser händelsen och beräknar om kandidaterna för återstående tid.
+- Kontakt löses före en port-/terminalhändelse med samma tidpunkt. Händelser med samma tidpunkt och kategori sorteras på pearl-ID. Inga framtida landningar eller bränningar verkställs före en tidigare kontakt.
+- En kollision vänder båda pärlornas riktning vid fysisk kontakt och emitterar en händelse med båda ID:n och komponentlokala kontaktpositioner. Samma par får inte kollidera igen medan pärlorna separerar.
+- En upptagen ansluten hjulslot ger studs vid fysisk kontakt. Detta gäller även ett helt fullt hjul. Retur till dispatcher bränner endast den ankommande pärlan; refill och held pearl ägs fortsatt av dispatchern.
+- Standardhastigheten är gemensam och oberoende av ursprungskälla och framtida ruttlängd. Befintlig `transitTravelMs` i dispatcher-fixtures anger referenssträckans restid för hela världen, inte en enskild dispatchers rutt.
+- Runtime projekterar core-state. Dispatcherns befintliga snapshot-fält `localProgress` är en uttrycklig presentationsfraktion `0..1`; det auktoritativa transitstate och kollisionskontakter använder grid-avstånd.
 
 ### Exempel på TypeScript‑typer
 

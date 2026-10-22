@@ -12,6 +12,7 @@ test("red and blue pearls collide, reverse, and return through authoritative sna
   await page.evaluate(() => globalThis.__PEARLS__?.setSimulationSpeed?.(0.25));
   expect((await snapshot(page)).simulationSpeed).toBe(0.25);
   await page.evaluate(() => globalThis.__PEARLS__?.setSimulationSpeed?.(1));
+  await page.evaluate(() => globalThis.__PEARLS__?.setSimulationSpeed?.(0.25));
   expect(initial.components.wheels["wheel-top"].slots[4]).toEqual({ id: "pearl-red", color: "red" });
   expect(initial.components.wheels["wheel-bottom"].slots[0]).toEqual({ id: "pearl-blue", color: "blue" });
 
@@ -19,28 +20,30 @@ test("red and blue pearls collide, reverse, and return through authoritative sna
   const afterFirst = await snapshot(page);
   await page.mouse.click(box.x + afterFirst.components.wheels["wheel-bottom"].ballCenter.x, box.y + afterFirst.components.wheels["wheel-bottom"].ballCenter.y);
 
-  const beforeRotation = await snapshot(page);
-  await page.evaluate(() => globalThis.__PEARLS__?.requestRotateTurn?.("wheel-top"));
-  const duringRotation = await snapshot(page);
-  expect(duringRotation.components.wheels["wheel-top"]).toMatchObject({
-    rotationStep: 1,
-    targetAngle: 45,
-    pendingTurns: 0,
-    isAnimating: true
+  await page.waitForFunction(() => {
+    const state = globalThis.__PEARLS__?.getSnapshot() as { activeTransits: unknown[] } | undefined;
+    return state?.activeTransits.length === 2;
   });
-  expect(duringRotation.activeTransits.map((transit: any) => ({
-    ball: transit.ball,
-    pathId: transit.pathId,
-    segment: transit.segment,
-    fromWheelId: transit.fromWheelId
-  }))).toEqual(beforeRotation.activeTransits.map((transit: any) => ({
-    ball: transit.ball,
-    pathId: transit.pathId,
-    segment: transit.segment,
-    fromWheelId: transit.fromWheelId
-  })));
-  await page.evaluate(() => globalThis.__PEARLS__?.requestRotateTurn?.("wheel-top"));
-  expect((await snapshot(page)).components.wheels["wheel-top"].rotationStep).toBe(1);
+  // Capture geometry and request rotation atomically, so a queued launch or normal movement
+  // between browser round trips cannot be mistaken for rotation changing the slide path.
+  const geometry = await page.evaluate(() => {
+    const debug = globalThis.__PEARLS__!;
+    const project = () => (debug.getSnapshot() as any).activeTransits.map((transit: any) => ({
+      ball: transit.ball, pathId: transit.pathId, segment: transit.segment, fromWheelId: transit.fromWheelId
+    }));
+    const before = project();
+    debug.requestRotateTurn("wheel-top");
+    debug.requestRotateTurn("wheel-top");
+    return { before, after: project() };
+  });
+  expect(geometry.after).toEqual(geometry.before);
+  await page.waitForFunction(() => {
+    const state = globalThis.__PEARLS__?.getSnapshot() as any;
+    return state?.components.wheels["wheel-top"].rotationStep === 1;
+  });
+  const rotated = await snapshot(page);
+  expect(rotated.components.wheels["wheel-top"]).toMatchObject({ rotationStep: 1, targetAngle: 45, pendingTurns: 0 });
+  await page.evaluate(() => globalThis.__PEARLS__?.setSimulationSpeed?.(1));
 
   await page.waitForFunction(() => {
     const pearls = globalThis.__PEARLS__;

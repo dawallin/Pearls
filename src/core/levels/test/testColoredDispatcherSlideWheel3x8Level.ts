@@ -22,12 +22,12 @@ export const testColoredDispatcherSlideWheel3x8Level = createGridLevelDefinition
           {
             id: "ball-green",
             color: "green",
-            delayMs: 2000
+            refillSpeed: "slow"
           },
           {
             id: "ball-blue",
             color: "blue",
-            delayMs: 2000
+            refillSpeed: "slow"
           }
         ]
       }

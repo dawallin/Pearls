@@ -3,10 +3,10 @@ import { PEARL_DIAMETER_GRID_UNITS, REFERENCE_TWO_SLIDE_ROUTE_LENGTH_GRID_UNITS 
 import type { GridLevelDefinition } from "../level/gridLevel";
 import {
   buildVerticalComponentTransitRoute,
-  type ComponentTransitSegment,
-  type CorePoint
+  type ComponentTransitSegment
 } from "./componentTransitRoute";
 import type { ComponentTransitEdge, ComponentTransitState } from "./componentTransitState";
+import { advanceComponentTransits } from "./componentTransitSystem";
 import {
   createComponentConnectionState,
   isComponentConnectionAllowed,
@@ -120,13 +120,6 @@ type WheelTransferCommand =
   | Readonly<{ type: "LAUNCH_FROM_WHEEL"; sourceWheelId: string; ballId: string }>
   | Readonly<{ type: "ROTATE_WHEEL"; wheelId: string; steps: number }>
   | Readonly<{ type: "SET_CONNECTION"; componentId: string; exitEdge: ComponentTransitEdge; endpoint: WheelTransferConnectionEndpoint }>;
-type TransitBefore = Readonly<{
-  currentComponentId: string;
-  entryEdge: ComponentTransitEdge;
-  previousEdge: ComponentTransitEdge;
-  localProgress: number;
-  direction: TransitDirection;
-}>;
 
 export type WheelTransferWorld = {
   tick: number;
@@ -357,66 +350,25 @@ function applyCommandsAtTickStart(world: WheelTransferWorld): void {
 }
 
 function advanceOneTick(world: WheelTransferWorld): void {
-  const transits = [...world.activeTransits.values()].sort((a, b) => a.ball.id.localeCompare(b.ball.id));
-  const before = new Map(transits.map((transit) => [transit.ball.id, captureTransit(transit)]));
-  const distance = PEARL_TRANSIT_SPEED_GRID_UNITS_PER_MS * WHEEL_TRANSFER_FIXED_TICK_MS;
-  for (const transit of transits) advanceTransit(world, transit, distance);
-  resolveComponentCollisions(world, transits, before, distance);
-}
-
-function advanceTransit(world: WheelTransferWorld, transit: ActiveTransit, distance: number): void {
-  let remaining = distance;
-  while (remaining > 0 && world.activeTransits.has(transit.ball.id)) {
-    const segment = getComponent(world, transit.currentComponentId);
-    const endpointDistance = transit.direction === "forward" ? segment.length - transit.localProgress : transit.localProgress;
-    const endpoint = resolveConnection(world, transit);
-    const destinationWheelId = endpoint.kind === "wheel" ? endpoint.wheelId : null;
-    const occupied = destinationWheelId !== null && getWheelWorldSlotOccupant(world.wheels[destinationWheelId], world.connectedWorldSlots[destinationWheelId]) !== null;
-    const contactDistance = occupied ? Math.max(0, endpointDistance - PEARL_DIAMETER_GRID_UNITS) : endpointDistance;
-    if (occupied && remaining >= contactDistance) {
-      transit.localProgress += transit.direction === "forward" ? contactDistance : -contactDistance;
-      remaining -= contactDistance;
-      bounce(world, transit, destinationWheelId, segment.id);
-      continue;
-    }
-    if (remaining < endpointDistance) {
-      transit.localProgress += transit.direction === "forward" ? remaining : -remaining;
-      return;
-    }
-    transit.localProgress = transit.direction === "forward" ? segment.length : 0;
-    remaining -= endpointDistance;
-    if (endpoint.kind === "wheel") {
-      land(world, transit, endpoint.wheelId);
-      return;
-    }
-    handoff(world, transit, endpoint.componentId, endpoint.entryEdge);
-    if (endpointDistance === 0) return;
-  }
-}
-
-function handoff(world: WheelTransferWorld, transit: ActiveTransit, nextComponentId: string, entryEdge: ComponentTransitEdge): void {
-  const from = getComponent(world, transit.currentComponentId);
-  const to = getComponent(world, nextComponentId);
-  transit.previousEdge = transit.entryEdge;
-  transit.entryEdge = entryEdge;
-  transit.currentComponentId = to.componentId;
-  if (entryEdge === to.entryEdge) {
-    transit.direction = "forward";
-    transit.localProgress = 0;
-  } else if (entryEdge === to.exitEdge) {
-    transit.direction = "back";
-    transit.localProgress = to.length;
-  } else {
-    throw new Error(`Entry edge "${entryEdge}" is incompatible with component "${to.componentId}".`);
-  }
-  world.lastEvents.push({
-    type: "SEGMENT_HANDOFF",
-    ballId: transit.ball.id,
-    pathId: world.pathId,
-    fromSegmentId: from.id,
-    toSegmentId: to.id,
-    tick: world.tick
-  });
+  advanceComponentTransits({
+    transits: () => [...world.activeTransits.values()],
+    id: (transit) => transit.ball.id,
+    getSegment: (id) => getComponent(world, id),
+    connections: world.connectionState,
+    speed: PEARL_TRANSIT_SPEED_GRID_UNITS_PER_MS,
+    terminalClearance: (_transit, endpoint) => endpoint.kind === "wheel" && getWheelWorldSlotOccupant(world.wheels[endpoint.wheelId], world.connectedWorldSlots[endpoint.wheelId]) !== null ? PEARL_DIAMETER_GRID_UNITS : 0,
+    onTerminal: (transit, endpoint) => {
+      if (endpoint.kind !== "wheel") throw new Error("Wheel transfer cannot enter a dispatcher.");
+      if (getWheelWorldSlotOccupant(world.wheels[endpoint.wheelId], world.connectedWorldSlots[endpoint.wheelId]) !== null) bounce(world, transit, endpoint.wheelId, getComponent(world, transit.currentComponentId).id);
+      else land(world, transit, endpoint.wheelId);
+    },
+    onHandoff: (transit, from) => world.lastEvents.push({ type: "SEGMENT_HANDOFF", ballId: transit.ball.id, pathId: world.pathId, fromSegmentId: getComponent(world, from).id, toSegmentId: getComponent(world, transit.currentComponentId).id, tick: world.tick }),
+    onCollision: (first, second) => world.lastEvents.push({
+      type: "BALL_COLLIDED", ballIds: [first.ball.id, second.ball.id], pathId: world.pathId,
+      segmentId: getComponent(world, first.currentComponentId).id,
+      contacts: [first, second].map((transit) => ({ componentId: transit.currentComponentId, localProgress: transit.localProgress })) as [ComponentContact, ComponentContact], tick: world.tick
+    })
+  }, WHEEL_TRANSFER_FIXED_TICK_MS);
 }
 
 function createDefaultConnections(
@@ -517,130 +469,6 @@ function land(world: WheelTransferWorld, transit: ActiveTransit, destinationWhee
   );
 }
 
-function resolveComponentCollisions(
-  world: WheelTransferWorld,
-  transits: readonly ActiveTransit[],
-  before: ReadonlyMap<string, TransitBefore>,
-  tickDistance: number
-): void {
-  const contacts: Array<{ first: ActiveTransit; second: ActiveTransit; fraction: number }> = [];
-  for (let index = 0; index < transits.length; index += 1) {
-    for (let other = index + 1; other < transits.length; other += 1) {
-      const first = transits[index];
-      const second = transits[other];
-      if (!world.activeTransits.has(first.ball.id) || !world.activeTransits.has(second.ball.id)) continue;
-      const firstBefore = before.get(first.ball.id);
-      const secondBefore = before.get(second.ball.id);
-      if (!firstBefore || !secondBefore || firstBefore.direction === secondBefore.direction) continue;
-      const fraction = contactFraction(
-        pointForState(world, firstBefore),
-        pointForTransit(world, first),
-        pointForState(world, secondBefore),
-        pointForTransit(world, second)
-      );
-      if (fraction !== null) contacts.push({ first, second, fraction });
-    }
-  }
-
-  contacts
-    .sort((left, right) => left.fraction - right.fraction || left.first.ball.id.localeCompare(right.first.ball.id) || left.second.ball.id.localeCompare(right.second.ball.id))
-    .forEach(({ first, second, fraction }) => {
-      if (!world.activeTransits.has(first.ball.id) || !world.activeTransits.has(second.ball.id)) return;
-      const firstBefore = before.get(first.ball.id)!;
-      const secondBefore = before.get(second.ball.id)!;
-      placeAlongTick(world, first, firstBefore, tickDistance * fraction);
-      placeAlongTick(world, second, secondBefore, tickDistance * fraction);
-      first.direction = first.direction === "forward" ? "back" : "forward";
-      second.direction = second.direction === "forward" ? "back" : "forward";
-      const byId = [first, second].sort((left, right) => left.ball.id.localeCompare(right.ball.id));
-      const contactsById = byId.map((transit): ComponentContact => ({
-        componentId: transit.currentComponentId,
-        localProgress: transit.localProgress
-      })) as [ComponentContact, ComponentContact];
-      world.lastEvents.push({
-        type: "BALL_COLLIDED",
-        ballIds: [byId[0].ball.id, byId[1].ball.id],
-        pathId: world.pathId,
-        segmentId: getComponent(world, byId[0].currentComponentId).id,
-        contacts: contactsById,
-        tick: world.tick
-      });
-      const remaining = tickDistance * (1 - fraction);
-      advanceTransit(world, first, remaining);
-      advanceTransit(world, second, remaining);
-    });
-}
-
-function contactFraction(firstStart: CorePoint, firstEnd: CorePoint, secondStart: CorePoint, secondEnd: CorePoint): number | null {
-  const relativeStart = { x: firstStart.x - secondStart.x, y: firstStart.y - secondStart.y };
-  const relativeVelocity = {
-    x: firstEnd.x - firstStart.x - (secondEnd.x - secondStart.x),
-    y: firstEnd.y - firstStart.y - (secondEnd.y - secondStart.y)
-  };
-  if (relativeStart.x * relativeVelocity.x + relativeStart.y * relativeVelocity.y >= 0) return null;
-  const a = relativeVelocity.x ** 2 + relativeVelocity.y ** 2;
-  const b = 2 * (relativeStart.x * relativeVelocity.x + relativeStart.y * relativeVelocity.y);
-  const c = relativeStart.x ** 2 + relativeStart.y ** 2 - PEARL_DIAMETER_GRID_UNITS ** 2;
-  if (a <= Number.EPSILON || c <= 0) return null;
-  const discriminant = b ** 2 - 4 * a * c;
-  if (discriminant < 0) return null;
-  const fraction = (-b - Math.sqrt(discriminant)) / (2 * a);
-  return fraction >= 0 && fraction <= 1 ? fraction : null;
-}
-
-function placeAlongTick(world: WheelTransferWorld, transit: ActiveTransit, before: TransitBefore, distance: number): void {
-  const start = getComponent(world, before.currentComponentId);
-  const toBoundary = before.direction === "forward" ? start.length - before.localProgress : before.localProgress;
-  if (distance <= toBoundary) {
-    Object.assign(transit, before, {
-      localProgress: before.localProgress + (before.direction === "forward" ? distance : -distance)
-    });
-    return;
-  }
-  const exitEdge = before.direction === "forward" ? start.exitEdge : start.entryEdge;
-  const endpoint = resolveComponentConnection(world.connectionState, before.currentComponentId, exitEdge);
-  if (endpoint.kind !== "component") throw new Error("Collision rewind crossed a non-component endpoint.");
-  const next = getComponent(world, endpoint.componentId);
-  const remaining = distance - toBoundary;
-  transit.previousEdge = before.entryEdge;
-  transit.entryEdge = endpoint.entryEdge;
-  transit.currentComponentId = next.componentId;
-  if (endpoint.entryEdge === next.entryEdge) {
-    transit.direction = "forward";
-    transit.localProgress = remaining;
-  } else if (endpoint.entryEdge === next.exitEdge) {
-    transit.direction = "back";
-    transit.localProgress = next.length - remaining;
-  } else {
-    throw new Error(`Entry edge "${endpoint.entryEdge}" is incompatible with component "${next.componentId}".`);
-  }
-}
-
-function captureTransit(transit: ActiveTransit): TransitBefore {
-  return {
-    currentComponentId: transit.currentComponentId,
-    entryEdge: transit.entryEdge,
-    previousEdge: transit.previousEdge,
-    localProgress: transit.localProgress,
-    direction: transit.direction
-  };
-}
-
-function pointForTransit(world: WheelTransferWorld, transit: ActiveTransit): CorePoint {
-  return pointOnComponent(getComponent(world, transit.currentComponentId), transit.localProgress);
-}
-
-function pointForState(world: WheelTransferWorld, state: TransitBefore): CorePoint {
-  return pointOnComponent(getComponent(world, state.currentComponentId), state.localProgress);
-}
-
-function pointOnComponent(component: ComponentTransitSegment, localProgress: number): CorePoint {
-  const fraction = component.length === 0 ? 0 : localProgress / component.length;
-  return {
-    x: component.entry.x + (component.exit.x - component.entry.x) * fraction,
-    y: component.entry.y + (component.exit.y - component.entry.y) * fraction
-  };
-}
 
 function getComponent(world: WheelTransferWorld, componentId: string): ComponentTransitSegment {
   const component = world.componentCatalog.get(componentId);
