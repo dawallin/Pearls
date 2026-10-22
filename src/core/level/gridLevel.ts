@@ -1,5 +1,7 @@
 import type { BallSeed } from "../ball/ballState";
+import type { BallColor } from "../ball/ballState";
 import type { WheelClearRule } from "../wheel/wheelClearRule";
+import type { RefillSpeed } from "../board/refillSpeed";
 
 export type GridCellCoordinate = Readonly<{
   column: number;
@@ -18,12 +20,14 @@ export type WheelLevelComponent = Readonly<{
   clearRule?: WheelClearRule;
 }>;
 
+const BALL_COLORS: readonly BallColor[] = ["red", "green", "blue"];
+
 export type DispatcherDownLevelComponent = Readonly<{
   type: "dispatcherDown";
   id: string;
   hasInitialBall?: boolean;
   initialBall?: BallSeed;
-  refillQueue?: readonly (BallSeed & Readonly<{ delayMs: number }>)[];
+  refillQueue?: readonly (BallSeed & Readonly<{ refillSpeed: RefillSpeed }>)[];
 }>;
 
 export type DispatcherRightLevelComponent = Readonly<{
@@ -31,7 +35,7 @@ export type DispatcherRightLevelComponent = Readonly<{
   id: string;
   hasInitialBall?: boolean;
   initialBall?: BallSeed;
-  refillQueue?: readonly (BallSeed & Readonly<{ delayMs: number }>)[];
+  refillQueue?: readonly (BallSeed & Readonly<{ refillSpeed: RefillSpeed }>)[];
 }>;
 
 export type VerticalSlideLevelComponent = Readonly<{
@@ -119,9 +123,17 @@ export function createGridLevelDefinition(
         assertPositiveInteger(cell.component.slotCount, `Wheel "${cell.component.id}" slotCount`);
         if (
           cell.component.clearRule &&
-          (cell.component.clearRule as Readonly<{ type?: unknown }>).type !== "harmony"
+          !["harmony", "pattern"].includes((cell.component.clearRule as Readonly<{ type?: string }>).type ?? "")
         ) {
           throw new Error(`Wheel "${cell.component.id}" has an unsupported clear rule.`);
+        }
+        if (cell.component.clearRule?.type === "pattern") {
+          if (cell.component.clearRule.targetColors.length !== cell.component.slotCount) {
+            throw new Error(`Wheel "${cell.component.id}" pattern target count must match slotCount.`);
+          }
+          if (cell.component.clearRule.targetColors.some((color) => !BALL_COLORS.includes(color))) {
+            throw new Error(`Wheel "${cell.component.id}" pattern contains an unsupported target color.`);
+          }
         }
         break;
       case "dispatcherDown":

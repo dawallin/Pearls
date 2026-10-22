@@ -17,7 +17,7 @@ In scope:
 - two vertical slide cells in the center column
 - one wheel spanning the bottom `3x3` area
 - three colored balls in a deterministic sequence: red, green, blue
-- configurable deterministic refill delay between balls
+- slow deterministic refill pacing between balls
 - wheel rotation between dispatches to free the connected wheel slot
 
 Out of scope:
@@ -33,11 +33,11 @@ The board starts with a red ball visible in the dispatcher.
 
 When the dispatcher is clicked, the red ball moves down the slide and lands in the wheel.
 
-After the configured refill delay, the dispatcher shows a green ball.
+After the slow refill delay, the dispatcher shows a green ball.
 
 The player must rotate the wheel one step before dispatching the next ball, otherwise the connected wheel slot remains occupied and the dispatcher cannot eject.
 
-After the green ball is dispatched, the dispatcher refills with a blue ball after the same configured delay.
+After the green ball is dispatched, the dispatcher refills with a blue ball after the same slow delay.
 
 After the blue ball is dispatched, the dispatcher remains empty.
 
@@ -52,7 +52,7 @@ After the blue ball is dispatched, the dispatcher remains empty.
 7. The dispatcher refill queue is `ball-green`, then `ball-blue`.
 8. `ball-green` has color `green`.
 9. `ball-blue` has color `blue`.
-10. Each queued ball uses the configured refill delay before appearing.
+10. Each queued ball uses the `slow` refill speed before appearing.
 11. Refill timing is deterministic core time, not runtime animation completion.
 12. A ball can dispatch only if the wheel's connected world slot is empty.
 13. Wheel slots store ball identity, and color follows the ball as the wheel rotates.

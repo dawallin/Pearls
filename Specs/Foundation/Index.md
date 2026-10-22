@@ -31,7 +31,8 @@ Read this for:
 - deterministic core vs runtime separation
 - simulation truth boundaries
 - core event and state principles
-- component-local transit, port-validated connection graphs, and source-side ejection
+- component-local transit ownership, atomic port handoffs, and source-side ejection
+- the shared transit timeline, neighbour boundary collisions, and terminal contact ordering
 
 ### `PlatformSpec.md`
 

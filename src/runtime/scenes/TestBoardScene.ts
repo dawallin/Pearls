@@ -133,9 +133,12 @@ export class TestBoardScene extends Phaser.Scene {
             wheel: {
               ...snapshot.wheel,
               center: this.componentCenters.get(snapshot.wheel.id),
+              targetColors: snapshot.wheel.targetColors,
               ballCenter: this.wheelView?.getBallWorldPosition(snapshot.wheel.ballLocalSlotIndex) ?? null,
               pearlDiameter: (this.wheelView?.getBallVisualRadius() ?? 0) * 2,
               renderedSlots: this.wheelView?.getRenderedSlots() ?? [],
+              targetIndicatorCenters: this.wheelView?.getTargetIndicatorPositions() ?? [],
+              targetIndicatorRotations: this.wheelView?.getTargetIndicatorRotations() ?? [],
               clearEffect: this.wheelView?.getClearEffectState() ?? {
                 active: false,
                 targetCount: 0
@@ -153,6 +156,7 @@ export class TestBoardScene extends Phaser.Scene {
       },
       pressDispatcher: (dispatcherId?: string) => this.dispatchBall(dispatcherId),
       requestRotateTurn: () => this.rotateWheel(),
+      ejectWheelPearl: (localSlotIndex: number) => this.ejectWheelBall(localSlotIndex),
       advanceTime: (deltaMs: number) => {
         this.controller.advanceTime(deltaMs);
         this.syncAuthoritativeVisuals();
@@ -311,6 +315,7 @@ export class TestBoardScene extends Phaser.Scene {
       y: cellLayout.centerY,
       size: maxWheelSize,
       slotCount: component.slotCount,
+      targetColors: component.clearRule?.type === "pattern" ? component.clearRule.targetColors : undefined,
       hasBall: false,
       ballLocalSlotIndex: null,
       onPressed: () => this.rotateWheel(),

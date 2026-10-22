@@ -117,7 +117,7 @@ describe("gridLevel", () => {
               type: "wheel",
               id: "wheel-a",
               slotCount: 8,
-              clearRule: { type: "pattern" } as never
+              clearRule: { type: "unsupported" } as never
             }
           }
         ]

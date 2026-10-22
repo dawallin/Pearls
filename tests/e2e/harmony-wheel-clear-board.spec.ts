@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { REFILL_DELAY_MS_BY_SPEED } from "../../src/core/board/refillSpeed";
 
 test("clears the reusable harmony wheel twice", async ({ page }) => {
   test.slow();
@@ -76,7 +77,7 @@ test("keeps existing wheel occupants visible while a dispatcher refills during t
     box.x + beforeSecondDispatch.components.dispatcher.center.x,
     box.y + beforeSecondDispatch.components.dispatcher.center.y
   );
-  await advanceTime(page, 250);
+  await advanceTime(page, REFILL_DELAY_MS_BY_SPEED.fast);
   await page.waitForFunction(() => {
     const pearls = globalThis.__PEARLS__;
     if (!pearls) return false;
@@ -128,7 +129,10 @@ test("renders a correctly sized transit pearl and ejects a wheel pearl back thro
   const inTransit = await getHarmonySnapshot(page);
   expect(inTransit.transitVisuals["ball-red-01"]?.diameter).toBeCloseTo(inTransit.components.wheel.pearlDiameter, 4);
 
-  await advanceTime(page, 500);
+  await page.waitForFunction(() => {
+    const snapshot = globalThis.__PEARLS__?.getSnapshot() as HarmonySnapshot | undefined;
+    return snapshot?.components.wheel.slots[0]?.id === "ball-red-01";
+  });
   const landed = await getHarmonySnapshot(page);
   if (!landed.components.wheel.ballCenter) throw new Error("Expected a wheel pearl at the slide-facing slot.");
   await page.mouse.click(box.x + landed.components.wheel.ballCenter.x, box.y + landed.components.wheel.ballCenter.y);
@@ -259,7 +263,7 @@ async function rotateWheel(
 }
 
 async function refillDispatcher(page: import("@playwright/test").Page): Promise<void> {
-  await advanceTime(page, 250);
+  await advanceTime(page, REFILL_DELAY_MS_BY_SPEED.fast);
   await page.waitForFunction(() => {
     const pearls = globalThis.__PEARLS__;
     if (!pearls) return false;

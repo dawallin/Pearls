@@ -45,7 +45,8 @@ Out of scope:
 5. Treat emitted events as part of the contract, not debug noise.
 6. Favor explicit module boundaries and small pure helpers over convenience coupling.
 7. Expose seams that are easy to unit test without bringing in runtime concerns.
-8. Preserve extension paths for new rules, entities, and level content without rewriting unrelated systems.
+8. Use the shared `componentTransitSystem` for component-local movement, handoffs, and same/adjacent-slide collisions as defined in `MainIdea.md`; worlds supply terminal behavior.
+9. Preserve extension paths for new rules, entities, and level content without rewriting unrelated systems.
 
 ## Implementation Bias
 

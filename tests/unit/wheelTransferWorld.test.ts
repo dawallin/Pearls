@@ -157,6 +157,40 @@ describe("wheelTransferWorld", () => {
     expect(snapshot.wheels["wheel-bottom"].slotBallIds[0]).toBe("blocking-ball");
   });
 
+  it("collides opposing pearls on Test 6 and returns both identities to their source wheels", () => {
+    const run = (reverse: boolean) => {
+      const world = createWheelTransferWorld({ ...transferConfig, level: testWheelBounce3x8Level, initialBallWheelIds: ["wheel-top", "wheel-bottom"] });
+      transferBallFromWheel(world, "wheel-top");
+      transferBallFromWheel(world, "wheel-bottom");
+      advanceWheelTransferWorld(world);
+      if (reverse) world.activeTransits = new Map([...world.activeTransits].reverse());
+      advanceWheelTransferWorld(world, 80);
+      const snapshot = getWheelTransferSnapshot(world);
+      expect(snapshot.lastEvents.filter((event) => event.type === "BALL_COLLIDED")).toHaveLength(1);
+      expect(snapshot.activeTransits).toEqual([]);
+      expect(snapshot.wheels["wheel-top"].slotBallIds[4]).toBe("transfer-ball");
+      expect(snapshot.wheels["wheel-bottom"].slotBallIds[0]).toBe("blocking-ball");
+      return snapshot;
+    };
+    expect(run(false)).toEqual(run(true));
+  });
+
+  it("bounces from a completely full destination wheel without consuming or replacing any pearl", () => {
+    const world = createWheelTransferWorld({ ...transferConfig, level: testWheelBounce3x8Level, initialBallWheelIds: ["wheel-top", "wheel-bottom"] });
+    const wheel = world.wheels["wheel-bottom"];
+    for (let index = 1; index < wheel.slotCount; index += 1) {
+      const id = `filler-${index}`;
+      world.balls[id] = { id, color: "blue" };
+      wheel.slots[index] = id;
+    }
+    const before = [...wheel.slots];
+    transferBallFromWheel(world, "wheel-top");
+    advanceWheelTransferWorld(world, 80);
+    expect(world.lastEvents).toContainEqual(expect.objectContaining({ type: "BALL_BOUNCED", ballId: "transfer-ball" }));
+    expect(wheel.slots).toEqual(before);
+    expect(getWheelTransferSnapshot(world).wheels["wheel-top"].slotBallIds[4]).toBe("transfer-ball");
+  });
+
   it("catalogs two slide components and emits a stable graph handoff", () => {
     const world = createWheelTransferWorld(transferConfig);
     expect(getWheelTransferSnapshot(world).components.map((component) => component.componentId)).toEqual(["slide-transfer-a", "slide-transfer-b"]);

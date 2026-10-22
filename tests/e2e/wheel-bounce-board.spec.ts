@@ -132,3 +132,25 @@ async function getBounceSnapshot(
     return pearls.getSnapshot() as BounceSnapshot;
   });
 }
+
+
+test("Test 6 opposing pearls collide and return to both wheels", async ({ page }) => {
+  await page.goto("/?test=test-6");
+  await page.waitForFunction(() => Boolean(globalThis.__PEARLS__));
+  const box = await page.locator("canvas").boundingBox();
+  if (!box) throw new Error("Expected canvas.");
+  await page.evaluate(() => globalThis.__PEARLS__?.setSimulationSpeed?.(0.25));
+  const initial = await getBounceSnapshot(page);
+  for (const id of ["wheel-top", "wheel-bottom"]) {
+    const center = initial.components.wheels[id].ballCenter!;
+    await page.mouse.click(box.x + center.x, box.y + center.y);
+  }
+  await page.waitForFunction(() => {
+    const state = globalThis.__PEARLS__?.getSnapshot() as BounceSnapshot | undefined;
+    return state?.lastEvents.some((event) => event.type === "BALL_COLLIDED") && !state.transitInProgress;
+  });
+  const settled = await getBounceSnapshot(page);
+  expect(settled.lastEvents.filter((event) => event.type === "BALL_COLLIDED")).toHaveLength(1);
+  expect(settled.components.wheels["wheel-top"].slotBallIds[4]).toBe("transfer-ball");
+  expect(settled.components.wheels["wheel-bottom"].slotBallIds[0]).toBe("blocking-ball");
+});

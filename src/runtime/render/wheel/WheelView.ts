@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 
-import type { BallState } from "../../../core/ball/ballState";
+import type { BallColor, BallState } from "../../../core/ball/ballState";
 import type { WheelAnimationInstruction as BoardWheelAnimationInstruction } from "../../game/DispatchBoardController";
 import type { TransferWheelAnimationInstruction } from "../../game/WheelTransferController";
 import type { WheelAnimationInstruction as SingleWheelAnimationInstruction } from "../../game/WheelController";
@@ -30,12 +30,14 @@ export type WheelViewConfig = Readonly<{
   hasBall?: boolean;
   ballLocalSlotIndex?: number | null;
   slots?: readonly (BallState | null)[];
+  targetColors?: readonly BallColor[];
 }>;
 
 export class WheelView {
   private readonly scene: Phaser.Scene;
   private readonly slotCount: number;
   private readonly balls: Phaser.GameObjects.Image[];
+  private readonly targetIndicators: Phaser.GameObjects.Graphics[];
   private readonly assembly: Phaser.GameObjects.Container;
   private readonly ballRadius: number;
   private slots: readonly (BallState | null)[];
@@ -65,6 +67,12 @@ export class WheelView {
       Phaser.Geom.Circle.Contains
     );
     wheel.on("pointerdown", config.onPressed);
+    this.targetIndicators = config.targetColors?.map((color) => {
+      const indicator = scene.add.graphics();
+      drawSocketDepth(indicator, getTargetDepthColor(color), ballSize);
+      drawTargetU(indicator, getTargetColor(color), ballSize, wheelScale);
+      return indicator;
+    }) ?? [];
     this.balls = Array.from({ length: config.slotCount }, () => {
       const ball = scene.add.image(0, 0, getPearlTextureKey("red"));
       ball.setScale(ballSize / ball.width);
@@ -112,6 +120,14 @@ export class WheelView {
 
   getRenderedSlots(): readonly (BallState | null)[] {
     return this.slots.map((ball) => (ball ? { ...ball } : null));
+  }
+
+  getTargetIndicatorPositions(): readonly { x: number; y: number }[] {
+    return this.targetIndicators.map((indicator) => ({ x: indicator.x, y: indicator.y }));
+  }
+
+  getTargetIndicatorRotations(): readonly number[] {
+    return this.targetIndicators.map((indicator) => indicator.rotation);
   }
 
   getClearEffectState(): Readonly<{ active: boolean; targetCount: number }> {
@@ -233,6 +249,13 @@ export class WheelView {
       const angle =
         slotIndexToLocalAngle(localSlotIndex, this.slotCount) + this.assembly.rotation;
       const slotBall = this.slots[localSlotIndex];
+      const indicator = this.targetIndicators[localSlotIndex];
+
+      indicator?.setPosition(
+        this.assembly.x + Math.cos(angle) * this.ballRadius,
+        this.assembly.y + Math.sin(angle) * this.ballRadius
+      );
+      indicator?.setRotation(angle + Math.PI / 2);
 
       if (slotBall) {
         ball.setTexture(getPearlTextureKey(slotBall.color));
@@ -244,5 +267,81 @@ export class WheelView {
       );
       ball.setVisible(slotBall !== null);
     }
+  }
+}
+
+function drawTargetU(
+  graphics: Phaser.GameObjects.Graphics,
+  color: number,
+  ballSize: number,
+  _wheelScale: number
+): void {
+  const innerRadius = ballSize * 0.56;
+  const fadeDistance = ballSize * 0.42;
+  const startAngle = Math.PI * 0.12;
+  const endAngle = Math.PI * 0.88;
+  const angleSegments = 16;
+  const radialLayers = 8;
+  const pointAt = (angle: number, radius: number) => ({
+    x: Math.cos(angle) * radius,
+    y: Math.sin(angle) * radius
+  });
+  const radiusAt = (angle: number) =>
+    innerRadius + Math.sin(((angle - startAngle) / (endAngle - startAngle)) * Math.PI) * ballSize * 0.035;
+  const smoothFade = (value: number) => value * value * (3 - 2 * value);
+
+  // Adjacent curved strips create a real spatial fade: saturated beside the socket,
+  // transparent at the outer edge toward the wheel's yellow center.
+  for (let angleIndex = 0; angleIndex < angleSegments; angleIndex += 1) {
+    const angle0 = startAngle + ((endAngle - startAngle) * angleIndex) / angleSegments;
+    const angle1 = startAngle + ((endAngle - startAngle) * (angleIndex + 1)) / angleSegments;
+    const anglePosition = (angleIndex + 0.5) / angleSegments;
+    const endTaper = Math.pow(Math.sin(Math.PI * anglePosition), 0.8);
+    const localFadeDistance = fadeDistance * endTaper;
+
+    for (let radialIndex = 0; radialIndex < radialLayers; radialIndex += 1) {
+      const fade0 = radialIndex / radialLayers;
+      const fade1 = (radialIndex + 1) / radialLayers;
+      const alpha = 0.98 * (1 - smoothFade((fade0 + fade1) / 2));
+      const inner0 = radiusAt(angle0) + localFadeDistance * fade0;
+      const inner1 = radiusAt(angle1) + localFadeDistance * fade0;
+      const outer0 = radiusAt(angle0) + localFadeDistance * fade1;
+      const outer1 = radiusAt(angle1) + localFadeDistance * fade1;
+
+      graphics.fillStyle(color, alpha);
+      graphics.fillPoints([
+        pointAt(angle0, inner0),
+        pointAt(angle1, inner1),
+        pointAt(angle1, outer1),
+        pointAt(angle0, outer0)
+      ], true);
+    }
+  }
+}
+
+function drawSocketDepth(
+  graphics: Phaser.GameObjects.Graphics,
+  color: number,
+  ballSize: number
+): void {
+  graphics.fillStyle(color, 0.78);
+  graphics.fillCircle(0, 0, ballSize * 0.25);
+  graphics.fillStyle(0x030405, 0.58);
+  graphics.fillCircle(0, 0, ballSize * 0.16);
+}
+
+function getTargetColor(color: BallColor): number {
+  switch (color) {
+    case "red": return 0xb72c22;
+    case "green": return 0x237a3d;
+    case "blue": return 0x1e61b0;
+  }
+}
+
+function getTargetDepthColor(color: BallColor): number {
+  switch (color) {
+    case "red": return 0x45130f;
+    case "green": return 0x12351c;
+    case "blue": return 0x102747;
   }
 }

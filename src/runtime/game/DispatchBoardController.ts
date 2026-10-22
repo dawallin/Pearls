@@ -12,6 +12,7 @@ import type { WheelClearRule } from "../../core/wheel/wheelClearRule";
 import type { ComponentTransitSegment, DispatcherTransitSegment } from "../../core/board/componentTransitRoute";
 import type { ComponentConnectionOption } from "../../core/board/componentConnectionState";
 import type { GridLevelDefinition } from "../../core/level/gridLevel";
+import type { RefillSpeed } from "../../core/board/refillSpeed";
 
 export type DispatchBoardControllerConfig = Readonly<{
   level?: GridLevelDefinition;
@@ -29,7 +30,7 @@ export type DispatchBoardControllerConfig = Readonly<{
     refillQueue?: readonly {
       id?: string;
       color: "red" | "green" | "blue";
-      delayMs: number;
+      refillSpeed: RefillSpeed;
     }[];
     connectedWorldSlotIndex?: number;
     entryEdge?: "north" | "east" | "south" | "west";
@@ -48,7 +49,7 @@ export type DispatchBoardControllerConfig = Readonly<{
   refillQueue?: readonly {
     id?: string;
     color: "red" | "green" | "blue";
-    delayMs: number;
+    refillSpeed: RefillSpeed;
   }[];
 }>;
 
@@ -100,6 +101,7 @@ export type DispatchBoardDebugSnapshot = Readonly<{
     slots: readonly ({ id: string; color: "red" | "green" | "blue" } | null)[];
     slotBallIds: readonly (string | null)[];
     clearRule: WheelClearRule | undefined;
+    targetColors: readonly ("red" | "green" | "blue")[] | null;
     clearCount: number;
     lastClearEvent: Extract<DispatchBoardEvent, { type: "WHEEL_CLEARED" }> | null;
     rotationStep: number;
@@ -193,6 +195,7 @@ export class DispatchBoardController {
         slots: snapshot.wheel.slots,
         slotBallIds: snapshot.wheel.slotBallIds,
         clearRule: snapshot.wheel.clearRule,
+        targetColors: snapshot.wheel.targetColors,
         clearCount: snapshot.wheel.clearCount,
         lastClearEvent: snapshot.wheel.lastClearEvent,
         rotationStep: snapshot.wheel.rotationStep,
